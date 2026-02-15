@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MySpotify Dashboard</title>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="icon" type="image/png" href="/static/assets/favicon.png">
+    <link rel="apple-touch-icon" href="/static/assets/favicon.png">
+    <!-- Google Identity Services -->
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+    <!-- Lucide Icons CDN -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <!-- Custom Style -->
+    <link rel="stylesheet" href="/static/style.css?v=2.7.6">
+</head>
+
+<body>
+    <div id="app">
+        <div id="auth-modal" class="modal-overlay">
+            <div class="modal">
+                <div class="logo" style="justify-content: center; margin-bottom: 32px;">
+                    <i data-lucide="music"></i> MySpotify
+                </div>
+                <h2>Welcome Back</h2>
+                <p style="color: var(--text-muted); margin-bottom: 32px;">Login to access your premium music sanctuary
+                </p>
+                <div id="google-login-btn"></div>
+                <div style="margin: 20px 0; color: var(--text-muted);">or</div>
+                <form id="login-form" style="display: flex; flex-direction: column; gap: 16px;">
+                    <input type="text" id="username" name="username" placeholder="Username" class="search-input"
+                        style="padding-left: 20px;">
+                    <input type="password" id="password" name="password" placeholder="Password" class="search-input"
+                        style="padding-left: 20px;">
+                    <button type="submit" class="btn-primary">Login</button>
+                </form>
+            </div>
+        </div>
+
+        <div class="layout">
+            <aside class="sidebar">
+                <div class="logo">
+                    <button class="btn-sidebar-toggle" id="btn-sidebar-toggle" title="Toggle Sidebar">
+                        <i data-lucide="menu"></i>
+                    </button>
+                    <i data-lucide="music-4"></i> <span>MySpotify</span>
+                </div>
+                <nav>
+                    <ul class="nav-links">
+                        <li class="nav-item active" data-view="home">
+                            <i data-lucide="home"></i> <span>Home</span>
+                        </li>
+                        <li class="nav-item" data-view="library">
+                            <i data-lucide="library"></i> <span>Your Library</span>
+                        </li>
+                        <li class="nav-item" data-view="liked">
+                            <i data-lucide="heart"></i> <span>Liked Songs</span>
+                        </li>
+                    </ul>
+                </nav>
+                <div style="margin-top: auto; font-size: 10px; color: var(--text-muted); opacity: 0.5;">
+                    v2.8.0
+                </div>
+            </aside>
+
+            <main class="main-content">
+                <div class="search-container">
+                    <i data-lucide="search" class="search-icon"></i>
+                    <input type="text" id="main-search" placeholder="Search for artists, songs, or podcasts..."
+                        class="search-input">
+                </div>
+
+                <section id="content-view">
+                    <h1 style="margin-bottom: 24px;"></h1>
+
+                    <div id="track-list" class="track-grid">
+                        <!-- Tracks will be injected here -->
+                    </div>
+                    <div id="infinite-scroll-trigger"
+                        style="min-height: 100px; width: 100%; border-top: 1px dashed var(--border-glass); margin-top: 20px; display: flex; flex-direction: column; align-items: center; justify-content: center; color: var(--text-muted); font-size: 14px; gap: 12px; padding: 20px;">
+                        <span>Loading more tracks...</span>
+                        <button class="btn-primary" onclick="loadHomeTracks(true)"
+                            style="width: auto; padding: 8px 16px; font-size: 13px;">
+                            Load More Manually
+                        </button>
+                    </div>
+                </section>
+            </main>
+
+            <footer class="player-bar">
+                <div class="current-track" id="player-metadata" style="visibility: hidden;">
+                    <img src="https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?w=100&q=80" alt="Track Art"
+                        class="current-track-img" id="player-img">
+                    <div class="track-info">
+                        <div class="title" id="player-title">Select a track</div>
+                        <div class="artist" id="player-artist">Unknown Artist</div>
+                    </div>
+                    <button class="control-btn" id="btn-like">
+                        <i data-lucide="heart"></i>
+                    </button>
+                    <button class="control-btn" id="btn-share">
+                        <i data-lucide="share-2"></i>
+                    </button>
+                </div>
+
+                <div class="player-controls">
+                    <div class="control-buttons">
+                        <button class="control-btn"><i data-lucide="shuffle"></i></button>
+                        <button class="control-btn" id="btn-prev"><i data-lucide="skip-back"></i></button>
+                        <button class="control-btn play" id="btn-play">
+                            <i data-lucide="play"></i>
+                        </button>
+                        <button class="control-btn" id="btn-next"><i data-lucide="skip-forward"></i></button>
+                        <button class="control-btn"><i data-lucide="repeat"></i></button>
+                    </div>
+                    <div class="progress-container">
+                        <span id="current-time">0:00</span>
+                        <div class="progress-bar" id="seek-bar">
+                            <div class="progress-fill" id="seek-fill" style="width: 0%"></div>
+                        </div>
+                        <span id="total-time">0:00</span>
+                    </div>
+                </div>
+
+                <div class="volume-controls">
+                    <button class="control-btn" id="btn-queue" onclick="toggleQueue()">
+                        <i data-lucide="list-music"></i>
+                    </button>
+                    <i data-lucide="volume-2"></i>
+                    <div class="volume-slider" id="volume-slider">
+                        <div class="progress-fill" id="volume-fill" style="width: 80%"></div>
+                    </div>
+                </div>
+            </footer>
+        </div>
+    </div>
+    <aside id="queue-sidebar" class="queue-sidebar">
+        <div class="queue-header">
+            <h3>Up Next</h3>
+            <button class="btn-icon" onclick="toggleQueue()"><i data-lucide="x"></i></button>
+        </div>
+        <div id="queue-list" class="queue-list">
+            <!-- Queue items will be injected here -->
+            <div class="empty-queue">Queue is empty</div>
+        </div>
+    </aside>
+    <div id="sidebar-overlay" class="sidebar-overlay"></div>
+    <div id="playlist-modal" class="modal-overlay">
+        <div class="modal">
+            <div class="modal-header">
+                <h2>Add to Playlist</h2>
+                <button class="btn-icon" onclick="document.getElementById('playlist-modal').style.display='none'"><i
+                        data-lucide="x"></i></button>
+            </div>
+            <div id="playlist-selector-list" class="playlist-selector-list">
+                <!-- Playlists will be injected here -->
+            </div>
+        </div>
+    </div>
+
+    <div id="toast" class="toast-container">Link copied!</div>
+    <audio id="main-audio"></audio>
+    <!-- App Logic -->
+    <script src="/static/api.js?v=2.8.0"></script>
+    <script src="/static/ui.js?v=2.8.0"></script>
+    <script src="/static/player.js?v=2.8.0"></script>
+    <script src="/static/main.js?v=2.8.0"></script>
+</body>
+
+</html>

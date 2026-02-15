@@ -1,0 +1,68 @@
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: myspotify-backend
+    restart: unless-stopped
+    volumes:
+      - ${MUSIC_PATH}/library:/app/library
+      - ${MUSIC_PATH}/cache:/app/cache
+      - ${MUSIC_PATH}/db:/app/db
+      - ./backend/app:/app/app
+    env_file: .env
+    depends_on:
+      - db-init
+    networks:
+      - myspotify-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Helper to ensure DB directory has right permissions if needed
+  db-init:
+    image: alpine
+    volumes:
+      - ${MUSIC_PATH}/db:/db
+    command: chown -R 1000:1000 /db
+    networks:
+      - myspotify-network
+
+  caddy:
+    image: caddy:latest
+    container_name: myspotify-proxy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    volumes:
+      - ./caddy/Caddyfile:/etc/caddy/Caddyfile
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - backend
+    networks:
+      - myspotify-network
+
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    container_name: myspotify-tunnel
+    restart: unless-stopped
+    command: tunnel run
+    environment:
+      - TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN}
+    extra_hosts:
+      - "localhost:host-gateway"
+    depends_on:
+      - caddy
+    networks:
+      - myspotify-network
+
+networks:
+  myspotify-network:
+    driver: bridge
+
+volumes:
+  caddy_data:
+  caddy_config:

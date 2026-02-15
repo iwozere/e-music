@@ -1,0 +1,9 @@
+{
+    email your-email@example.com
+    auto_https off
+}
+
+# Web Dashboard & API
+http://e-music.win, http://api.e-music.win {
+    reverse_proxy backend:8000
+}
