@@ -22,6 +22,33 @@ const PLAYER = {
 
         // Volume Control Init
         audio.volume = 0.8;
+
+        // Seeker Interaction
+        const seekBar = document.getElementById('seek-bar');
+        if (seekBar) {
+            seekBar.addEventListener('click', (e) => {
+                const rect = seekBar.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                const percent = x / rect.width;
+                if (!isNaN(audio.duration)) {
+                    audio.currentTime = percent * audio.duration;
+                }
+            });
+        }
+
+        // Volume Interaction
+        const volumeSlider = document.getElementById('volume-slider');
+        if (volumeSlider) {
+            volumeSlider.addEventListener('click', (e) => {
+                const rect = volumeSlider.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                const percent = Math.max(0, Math.min(1, x / rect.width));
+                audio.volume = percent;
+
+                const volumeFill = document.getElementById('volume-fill');
+                if (volumeFill) volumeFill.style.width = `${percent * 100}%`;
+            });
+        }
     },
 
     formatTime: (seconds) => {
