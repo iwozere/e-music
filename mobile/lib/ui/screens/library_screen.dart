@@ -3,9 +3,9 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../theme/app_colors.dart';
 import '../../repositories/track_repository.dart';
 import '../../models/track.dart';
-import '../../logic/blocs/audio_player_bloc.dart';
 import '../widgets/mini_player.dart';
 import 'package:share_plus/share_plus.dart';
+import '../widgets/track_list_tile.dart';
 
 class LibraryScreen extends StatefulWidget {
   const LibraryScreen({super.key});
@@ -35,10 +35,66 @@ class _LibraryScreenState extends State<LibraryScreen> {
     }
   }
 
+  void _showCreatePlaylistDialog() {
+    final controller = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('Create Playlist'),
+          content: TextField(
+            controller: controller,
+            decoration: const InputDecoration(hintText: 'Playlist Name'),
+            autofocus: true,
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                final name = controller.text.trim();
+                if (name.isNotEmpty) {
+                  final repository = context.read<TrackRepository>();
+                  final success = await repository.createPlaylist(name);
+                  if (context.mounted) {
+                    Navigator.pop(context);
+                    if (success) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Playlist "$name" created')),
+                      );
+                      _loadPlaylists();
+                    } else {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Failed to create playlist'),
+                        ),
+                      );
+                    }
+                  }
+                }
+              },
+              child: const Text('Create'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Your Library')),
+      appBar: AppBar(
+        title: const Text('Your Library'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.add),
+            onPressed: _showCreatePlaylistDialog,
+          ),
+        ],
+      ),
       body: Stack(
         children: [
           _isLoading
@@ -144,22 +200,10 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
                   itemCount: _tracks.length,
                   itemBuilder: (context, index) {
                     final track = _tracks[index];
-                    return ListTile(
-                      leading: track.thumbnail != null
-                          ? Image.network(
-                              track.thumbnail!,
-                              width: 40,
-                              height: 40,
-                              fit: BoxFit.cover,
-                            )
-                          : const Icon(Icons.music_note),
-                      title: Text(track.title),
-                      subtitle: Text(track.artist ?? 'Unknown Artist'),
-                      onTap: () {
-                        context.read<AudioPlayerBloc>().add(
-                          PlayTrackEvent(track),
-                        );
-                      },
+                    return TrackListTile(
+                      track: track,
+                      playlistId: widget.playlistId,
+                      onRemove: _loadTracks,
                     );
                   },
                 ),

@@ -71,6 +71,22 @@ class TrackRepository {
     return response.statusCode == 200;
   }
 
+  Future<bool> createPlaylist(String name) async {
+    final response = await apiClient.post(
+      '/playlists',
+      body: {'name': name},
+      useFormData: true,
+    );
+    return response.statusCode == 200 || response.statusCode == 201;
+  }
+
+  Future<bool> removeFromPlaylist(String playlistId, String trackId) async {
+    final response = await apiClient.delete(
+      '/playlists/$playlistId/tracks/$trackId',
+    );
+    return response.statusCode == 200;
+  }
+
   Future<Map<String, dynamic>> getStorageInfo() async {
     final response = await apiClient.get('/system/storage');
     if (response.statusCode == 200) {

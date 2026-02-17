@@ -69,4 +69,20 @@ class ApiClient {
       body: finalBody,
     );
   }
+
+  Future<http.Response> delete(
+    String endpoint, {
+    bool authenticated = true,
+  }) async {
+    Map<String, String> headers = {'Content-Type': 'application/json'};
+
+    if (authenticated) {
+      String? token = await getToken();
+      if (token != null) {
+        headers['Authorization'] = 'Bearer $token';
+      }
+    }
+
+    return await http.delete(Uri.parse('$baseUrl$endpoint'), headers: headers);
+  }
 }
