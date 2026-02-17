@@ -33,6 +33,11 @@ class UpdateTrackLikedStatus extends AudioPlayerEvent {
   UpdateTrackLikedStatus(this.trackId, this.isLiked);
 }
 
+class PlayPlaylistEvent extends AudioPlayerEvent {
+  final List<Track> tracks;
+  PlayPlaylistEvent(this.tracks);
+}
+
 class AudioPlayerState {
   final Track? currentTrack;
   final List<Track> queue;
@@ -106,6 +111,15 @@ class AudioPlayerBloc extends Bloc<AudioPlayerEvent, AudioPlayerState> {
         newQueue.add(event.track);
       }
       emit(state.copyWith(queue: newQueue));
+    });
+
+    on<PlayPlaylistEvent>((event, emit) async {
+      if (event.tracks.isNotEmpty) {
+        final firstTrack = event.tracks.first;
+        final remainingTracks = List<Track>.from(event.tracks)..removeAt(0);
+        emit(state.copyWith(queue: remainingTracks));
+        await _playTrack(firstTrack, emit);
+      }
     });
 
     on<PlayNextInQueue>((event, emit) async {

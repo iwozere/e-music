@@ -40,6 +40,14 @@ class _LikedSongsScreenState extends State<LikedSongsScreen> {
       appBar: AppBar(
         title: const Text('Liked Songs'),
         actions: [
+          if (_tracks.isNotEmpty)
+            IconButton(
+              icon: const Icon(Icons.play_circle_fill),
+              tooltip: 'Play All',
+              onPressed: () {
+                context.read<AudioPlayerBloc>().add(PlayPlaylistEvent(_tracks));
+              },
+            ),
           IconButton(
             icon: const Icon(Icons.share),
             onPressed: () {

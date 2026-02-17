@@ -6,6 +6,7 @@ import '../../models/track.dart';
 import '../widgets/mini_player.dart';
 import 'package:share_plus/share_plus.dart';
 import '../widgets/track_list_tile.dart';
+import '../../logic/blocs/audio_player_bloc.dart';
 
 class LibraryScreen extends StatefulWidget {
   const LibraryScreen({super.key});
@@ -190,7 +191,19 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text(widget.name)),
+      appBar: AppBar(
+        title: Text(widget.name),
+        actions: [
+          if (_tracks.isNotEmpty)
+            IconButton(
+              icon: const Icon(Icons.play_circle_fill),
+              tooltip: 'Play All',
+              onPressed: () {
+                context.read<AudioPlayerBloc>().add(PlayPlaylistEvent(_tracks));
+              },
+            ),
+        ],
+      ),
       body: Stack(
         children: [
           _isLoading

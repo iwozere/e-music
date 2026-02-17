@@ -153,6 +153,14 @@ window.addToQueue = (id, title, artist, thumbnail, top = false) => {
     }
 };
 
+window.playAll = () => {
+    if (state.currentTracksContext.length > 0) {
+        state.queue = []; // Clear queue when playing context
+        const first = state.currentTracksContext[0];
+        playTrack(first.id || first.remote_id, first.title, first.artist, first.thumbnail);
+    }
+};
+
 window.removeFromQueue = (index) => {
     state.queue.splice(index, 1);
     UI.renderQueue();
