@@ -69,7 +69,8 @@ async def stream_youtube(track_id: str) -> StreamingResponse:
         try:
             with open(download_path, "wb") as cache_file:
                 while True:
-                    chunk = await process.stdout.read(64 * 1024)  # 64KB chunks
+                    # Larger read buffer for stdout to reduce syscalls/waiting
+                    chunk = await process.stdout.read(128 * 1024)  # 128KB chunks
                     if not chunk:
                         break
                     cache_file.write(chunk)

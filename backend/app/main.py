@@ -616,6 +616,37 @@ async def like_track(
     session.commit()
     return {"status": "success", "is_liked": is_liked}
 
+@app.get("/tracks/recent")
+async def get_recent_tracks(
+    offset: int = 0,
+    limit: int = 20,
+    session: Session = Depends(get_session),
+    current_user: Optional[User] = Depends(get_optional_user)
+) -> List[dict]:
+    """
+    Fetch recently added or modified tracks.
+    """
+    statement = (
+        select(Track)
+        .order_by(Track.added_at.desc())
+        .offset(offset)
+        .limit(limit)
+    )
+    results = session.exec(statement).all()
+    
+    final_results = []
+    likes = set()
+    if current_user:
+        likes_stmt = select(UserActivity.track_id).where(UserActivity.user_id == current_user.id, UserActivity.is_liked == True)
+        likes = set(session.exec(likes_stmt).all())
+
+    for track in results:
+        t_dict = track.dict()
+        t_dict["is_liked"] = t_dict["id"] in likes
+        final_results.append(t_dict)
+        
+    return final_results
+
 @app.post("/tracks/{track_id}/play")
 async def track_played(
     track_id: str, 

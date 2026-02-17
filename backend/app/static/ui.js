@@ -56,10 +56,17 @@ const UI = {
                 ? track.thumbnail
                 : 'https://images.unsplash.com/photo-1493225255756-d9584f8606e9?w=300&q=80';
 
+            const sourceIcon = track.source_type === 'local' ? 'hard-drive' : 'cloud';
+            const cacheBadge = track.is_cached ? `<span class="badge-cached" title="Cached on SSD"><i data-lucide="check-circle" style="width: 10px; height: 10px;"></i> Cached</span>` : "";
+
             return `
                 <div class="track-card animate-fade">
                     <div class="card-image-container" onclick="playTrack('${id}', '${safeTitle}', '${safeArtist}', '${thumb}')">
                         <img src="${thumb}" class="track-image">
+                        <div class="source-indicator" title="Source: ${track.source_type}">
+                            <i data-lucide="${sourceIcon}"></i>
+                        </div>
+                        ${cacheBadge}
                         <div class="card-play-overlay">
                             <i data-lucide="play-circle"></i>
                         </div>
@@ -101,6 +108,9 @@ const UI = {
         } else {
             list.innerHTML = html;
             state.currentTracksContext = tracks;
+            // Reset scroll on NEW view
+            const scrollContainer = document.querySelector('.main-content');
+            if (scrollContainer) scrollContainer.scrollTop = 0;
         }
         UI.initIcons();
     },
@@ -108,8 +118,19 @@ const UI = {
     setLoading: (isLoading) => {
         const trigger = document.getElementById('infinite-scroll-trigger');
         if (trigger) {
-            trigger.innerHTML = isLoading ? '<div class="spinner"></div>' : '';
-            trigger.style.display = isLoading ? 'flex' : 'block';
+            // Keep the basic structure but show/hide content
+            if (isLoading) {
+                trigger.innerHTML = '<div class="spinner"></div><span>Fetching more magic...</span>';
+            } else {
+                // Restore manual load button as a fallback
+                trigger.innerHTML = `
+                    <span>End of the road?</span>
+                    <button class="btn-primary" onclick="loadHomeTracks(true)" style="width: auto; padding: 8px 16px; font-size: 13px;">
+                        Try Manual Load
+                    </button>
+                `;
+            }
+            trigger.style.display = 'flex';
         }
     },
 

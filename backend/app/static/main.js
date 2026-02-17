@@ -1,5 +1,5 @@
 // main.js - Entry Point
-console.log("MySpotify v2.8.2 - Refactored");
+console.log("MySpotify v2.8.4 - Refactored");
 
 const state = {
     user: null,
@@ -43,9 +43,14 @@ const performSearch = async (query, append = false) => {
     UI.setLoading(true);
 
     try {
-        const res = await (state.currentView === 'home'
-            ? API.getPopular(state.searchMeta.offset, state.searchMeta.limit)
-            : API.search(query, state.searchMeta.offset, state.searchMeta.limit));
+        let res;
+        if (state.currentView === 'home') {
+            res = await API.getPopular(state.searchMeta.offset, state.searchMeta.limit);
+        } else if (state.currentView === 'recent') {
+            res = await API.getRecent(state.searchMeta.offset, state.searchMeta.limit);
+        } else {
+            res = await API.search(query, state.searchMeta.offset, state.searchMeta.limit);
+        }
 
         const tracks = await res.json();
         state.searchMeta.hasMore = tracks.length === state.searchMeta.limit;
@@ -150,6 +155,7 @@ const initEventListeners = () => {
                 }
                 loadHome(); // Alias for search home
             } else if (view === 'home') loadHome();
+            else if (view === 'recent') loadRecentSongs();
             else if (view === 'liked') loadLikedSongs();
             else if (view === 'library') loadLibrary();
         });
@@ -179,10 +185,10 @@ const initInfiniteScroll = () => {
         console.log(`[InfiniteScroll] Intersection detected: isIntersecting=${entry.isIntersecting}, ratio=${entry.intersectionRatio.toFixed(2)}`);
 
         if (entry.isIntersecting && state.searchMeta.hasMore && !state.searchMeta.isFetching) {
-            console.log('[InfiniteScroll] Triggering load for view:', state.currentView);
+            console.log('[InfiniteScroll] Triggering load for view:', state.currentView, 'query:', state.searchMeta.query);
             if (state.searchMeta.query) {
                 performSearch(state.searchMeta.query, true);
-            } else if (state.currentView === 'home') {
+            } else if (state.currentView === 'home' || state.currentView === 'search' || state.currentView === 'recent') {
                 loadHomeTracks(true);
             }
         }
@@ -199,6 +205,12 @@ const initInfiniteScroll = () => {
 // --- View Loaders ---
 window.loadHome = async () => {
     state.currentView = 'home';
+    state.currentPlaylistId = null;
+    return loadHomeTracks(false);
+};
+
+window.loadRecentSongs = async () => {
+    state.currentView = 'recent';
     state.currentPlaylistId = null;
     return loadHomeTracks(false);
 };

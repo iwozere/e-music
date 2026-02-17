@@ -271,6 +271,46 @@ body {
     transform: scale(1);
 }
 
+.source-indicator {
+    position: absolute;
+    top: 12px;
+    left: 12px;
+    background: rgba(0, 0, 0, 0.6);
+    color: white;
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    backdrop-filter: blur(4px);
+    z-index: 5;
+}
+
+.source-indicator i {
+    width: 14px;
+    height: 14px;
+}
+
+.badge-cached {
+    position: absolute;
+    bottom: 12px;
+    right: 12px;
+    background: var(--primary);
+    color: white;
+    font-size: 10px;
+    font-weight: 700;
+    padding: 4px 8px;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    backdrop-filter: blur(4px);
+    z-index: 5;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
 .card-actions {
     position: absolute;
     top: 24px;

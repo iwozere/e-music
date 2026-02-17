@@ -24,6 +24,9 @@ const API = {
 
     getLiked: () => apiFetch('/tracks/liked'),
 
+    getRecent: (offset, limit) =>
+        apiFetch(`/tracks/recent?offset=${offset}&limit=${limit}`),
+
     toggleLike: (trackId, isLiked) =>
         apiFetch(`/tracks/${trackId}/like?is_liked=${!isLiked}`, { method: 'POST' }),
 
