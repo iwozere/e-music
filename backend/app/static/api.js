@@ -41,6 +41,9 @@ const API = {
         });
     },
 
+    removeTrackFromPlaylist: (playlistId, trackId) =>
+        apiFetch(`/playlists/${playlistId}/tracks/${trackId}`, { method: 'DELETE' }),
+
     createPlaylist: (name) => {
         const formData = new URLSearchParams();
         formData.append('name', name);

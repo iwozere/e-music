@@ -16,7 +16,8 @@ const state = {
         hasMore: true
     },
     currentTracksContext: [],
-    currentTrackIndex: -1
+    currentTrackIndex: -1,
+    currentPlaylistId: null
 };
 
 // --- Core Logic ---
@@ -49,7 +50,7 @@ const performSearch = async (query, append = false) => {
         const tracks = await res.json();
         state.searchMeta.hasMore = tracks.length === state.searchMeta.limit;
 
-        let title = append ? null : (state.currentView === 'home' ? null : `Results for "${query}"`);
+        let title = append ? null : (state.currentView === 'home' ? null : null); // Always null now for search
         UI.renderTracks(tracks, title, append);
         state.searchMeta.offset += tracks.length;
         return tracks; // Return tracks for awaiting
@@ -110,7 +111,23 @@ const initGoogleLogin = () => {
 
 const initEventListeners = () => {
     // Search
-    document.getElementById('main-search')?.addEventListener('input', (e) => debouncedSearch(e.target.value));
+    const searchInput = document.getElementById('main-search');
+    const clearBtn = document.getElementById('btn-clear-search');
+
+    searchInput?.addEventListener('input', (e) => {
+        const query = e.target.value;
+        if (clearBtn) clearBtn.classList.toggle('visible', query.length > 0);
+        debouncedSearch(query);
+    });
+
+    clearBtn?.addEventListener('click', () => {
+        if (searchInput) {
+            searchInput.value = '';
+            searchInput.focus();
+            clearBtn.classList.remove('visible');
+            performSearch('');
+        }
+    });
 
     // Navigation
     document.querySelectorAll('.nav-item').forEach(item => {
@@ -119,14 +136,19 @@ const initEventListeners = () => {
             document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
             item.classList.add('active');
 
+            // Clear search on any navigation
+            if (searchInput) {
+                searchInput.value = '';
+                if (clearBtn) clearBtn.classList.remove('visible');
+            }
+
             if (view === 'search') {
-                const searchInput = document.getElementById('main-search');
                 const scrollContainer = document.querySelector('.main-content');
                 if (scrollContainer) scrollContainer.scrollTop = 0;
                 if (searchInput) {
                     searchInput.focus();
-                    searchInput.select();
                 }
+                loadHome(); // Alias for search home
             } else if (view === 'home') loadHome();
             else if (view === 'liked') loadLikedSongs();
             else if (view === 'library') loadLibrary();
@@ -177,6 +199,7 @@ const initInfiniteScroll = () => {
 // --- View Loaders ---
 window.loadHome = async () => {
     state.currentView = 'home';
+    state.currentPlaylistId = null;
     return loadHomeTracks(false);
 };
 
@@ -186,6 +209,7 @@ window.loadHomeTracks = async (append = false) => {
 
 window.loadLikedSongs = async () => {
     state.currentView = 'liked';
+    state.currentPlaylistId = null;
     try {
         const res = await API.getLiked();
         if (res.status === 401) {
@@ -213,6 +237,7 @@ window.loadLikedSongs = async () => {
 
 window.loadPlaylist = async (playlistId, name = "Playlist") => {
     state.currentView = 'playlist';
+    state.currentPlaylistId = playlistId;
     state.searchMeta.hasMore = false;
     UI.setLoading(true);
     try {
@@ -235,6 +260,7 @@ window.loadPlaylist = async (playlistId, name = "Playlist") => {
 
 window.loadLibrary = async () => {
     state.currentView = 'library';
+    state.currentPlaylistId = null;
     const trackList = document.getElementById('track-list');
     trackList.innerHTML = '<div class="loading-spinner"></div>';
 
@@ -262,6 +288,9 @@ window.loadLibrary = async () => {
                     <i data-lucide="music" style="width: 48px; height: 48px; color: var(--text-muted); margin-bottom: 20px;"></i>
                     <h2>No Playlists Yet</h2>
                     <p>Create your first playlist to start building your library.</p>
+                    <button class="btn-primary" onclick="createNewPlaylist()" style="margin-top: 20px; width: auto; padding: 12px 24px;">
+                        Create Playlist
+                    </button>
                 </div>
             `;
             UI.initIcons();
@@ -310,6 +339,54 @@ window.shareItem = (id, type) => {
     const url = `${window.location.origin}/?${type}=${id}`;
     navigator.clipboard.writeText(url);
     UI.showToast("Copied to clipboard!");
+};
+
+window.createNewPlaylist = async () => {
+    if (!state.user) {
+        UI.showToast("Please login to create playlists!");
+        document.getElementById('auth-modal').style.display = 'flex';
+        return;
+    }
+
+    const name = prompt("Enter playlist name:");
+    if (!name || name.trim() === "") return;
+
+    try {
+        const res = await API.createPlaylist(name);
+        if (res.ok) {
+            UI.showToast(`Playlist "${name}" created!`);
+            if (state.currentView === 'library') {
+                loadLibrary();
+            }
+        } else {
+            const err = await res.json();
+            UI.showToast(`Error: ${err.detail || 'Failed to create playlist'}`);
+        }
+    } catch (err) {
+        console.error("Create playlist failed:", err);
+        UI.showToast("Connection error. Try again.");
+    }
+};
+
+window.removeFromPlaylist = async (trackId) => {
+    if (!state.currentPlaylistId) return;
+
+    try {
+        const res = await API.removeTrackFromPlaylist(state.currentPlaylistId, trackId);
+        if (res.ok) {
+            UI.showToast("Track removed from playlist");
+            // Reload the current playlist view
+            const viewTitle = document.querySelector('#content-view h1');
+            const playlistName = viewTitle ? viewTitle.innerText.split(' Play All')[0].trim() : "Playlist";
+            loadPlaylist(state.currentPlaylistId, playlistName);
+        } else {
+            const err = await res.json();
+            UI.showToast(`Error: ${err.detail || 'Failed to remove track'}`);
+        }
+    } catch (err) {
+        console.error("Remove track failed:", err);
+        UI.showToast("Connection error. Try again.");
+    }
 };
 
 document.addEventListener('DOMContentLoaded', initApp);

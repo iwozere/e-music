@@ -74,9 +74,15 @@ const UI = {
                         <button class="card-action-btn" title="Play Next" onclick="event.stopPropagation(); addToQueue('${id}', '${safeTitle}', '${safeArtist}', '${track.thumbnail}', true)">
                             <i data-lucide="list-start"></i>
                         </button>
-                        <button class="card-action-btn" title="Add to Playlist" onclick="event.stopPropagation(); showPlaylistSelector('${id}')">
-                            <i data-lucide="plus-square"></i>
-                        </button>
+                        ${state.currentView === 'playlist' ? `
+                            <button class="card-action-btn" title="Remove from Playlist" onclick="event.stopPropagation(); removeFromPlaylist('${id}')">
+                                <i data-lucide="minus-square"></i>
+                            </button>
+                        ` : `
+                            <button class="card-action-btn" title="Add to Playlist" onclick="event.stopPropagation(); showPlaylistSelector('${id}')">
+                                <i data-lucide="plus-square"></i>
+                            </button>
+                        `}
                         <button class="card-action-btn ${isLiked ? 'active' : ''}" title="Like" onclick="event.stopPropagation(); toggleLike('${id}', this)">
                             <i data-lucide="heart" ${isLiked ? 'fill="currentColor"' : ''}></i>
                         </button>

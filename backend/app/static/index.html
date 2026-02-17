@@ -52,7 +52,7 @@
                 <nav>
                     <ul class="nav-links">
                         <li class="nav-item active" data-view="home">
-                            <i data-lucide="home"></i> <span>Home</span>
+                            <i data-lucide="search"></i> <span>Search</span>
                         </li>
                         <li class="nav-item" data-view="library">
                             <i data-lucide="library"></i> <span>Your Library</span>
@@ -62,6 +62,11 @@
                         </li>
                     </ul>
                 </nav>
+                <div class="sidebar-section">
+                    <button class="btn-create-playlist" onclick="createNewPlaylist()" title="Create New Playlist">
+                        <i data-lucide="plus-circle"></i> <span>Create Playlist</span>
+                    </button>
+                </div>
                 <div style="margin-top: auto; font-size: 10px; color: var(--text-muted); opacity: 0.5;">
                     v2.8.0
                 </div>
@@ -72,6 +77,9 @@
                     <i data-lucide="search" class="search-icon"></i>
                     <input type="text" id="main-search" placeholder="Search for artists, songs, or podcasts..."
                         class="search-input">
+                    <button id="btn-clear-search" class="search-clear-btn" title="Clear Search">
+                        <i data-lucide="x"></i>
+                    </button>
                 </div>
 
                 <section id="content-view">

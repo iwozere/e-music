@@ -823,6 +823,45 @@ async def add_track_to_playlist(
     session.commit()
     return {"status": "success"}
 
+@app.delete("/playlists/{playlist_id}/tracks/{track_id}")
+async def delete_track_from_playlist(
+    playlist_id: str,
+    track_id: str,
+    session: Session = Depends(get_session), 
+    current_user: User = Depends(get_current_user)
+) -> dict:
+    """
+    Remove a track from a specific playlist.
+    """
+    # 1. Verify playlist ownership
+    playlist = session.exec(select(Playlist).where(
+        Playlist.id == playlist_id, 
+        Playlist.owner_id == current_user.id
+    )).first()
+    
+    if not playlist:
+        raise HTTPException(status_code=404, detail="Playlist not found")
+
+    # 2. Find and delete the relation
+    # Note: track_id coming from frontend might be a UUID or a remote_id (YouTube).
+    # ensure_track_exists handles resolving this to a persistent DB track.
+    track = await ensure_track_exists(session, track_id)
+    if not track:
+        raise HTTPException(status_code=404, detail="Track could not be resolved.")
+
+    statement = select(PlaylistTrack).where(
+        PlaylistTrack.playlist_id == playlist_id, 
+        PlaylistTrack.track_id == track.id
+    )
+    relation = session.exec(statement).first()
+    
+    if not relation:
+        raise HTTPException(status_code=404, detail="Track not in playlist")
+
+    session.delete(relation)
+    session.commit()
+    return {"status": "success"}
+
 @app.get("/playlists/{playlist_id}/tracks")
 async def get_playlist_tracks(
     playlist_id: str,
