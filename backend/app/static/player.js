@@ -1,4 +1,4 @@
-// player.js - Audio Logic & Media Session v2.7.5
+// player.js - Audio Logic & Media Session
 const PLAYER = {
     init: () => {
         const audio = document.getElementById('main-audio');

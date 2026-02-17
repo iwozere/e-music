@@ -59,12 +59,15 @@ async def stream_youtube(track_id: str) -> StreamingResponse:
         stderr=asyncio.subprocess.PIPE
     )
 
+    download_path = f"{temp_path}.download"
+
     async def iterate_stdout() -> AsyncGenerator[bytes, None]:
         """
         Background iterator to stream bytes and write to temp cache file simultaneously.
         """
+        success = False
         try:
-            with open(temp_path, "wb") as cache_file:
+            with open(download_path, "wb") as cache_file:
                 while True:
                     chunk = await process.stdout.read(64 * 1024)  # 64KB chunks
                     if not chunk:
@@ -72,7 +75,10 @@ async def stream_youtube(track_id: str) -> StreamingResponse:
                     cache_file.write(chunk)
                     yield chunk
             
-            _logger.info("Temp cache complete for track: %s", track_id)
+            # Atomic rename only if we reached the end successfully
+            os.rename(download_path, temp_path)
+            success = True
+            _logger.info("Atomic cache complete for track: %s", track_id)
             
             # After completion, update DB
             with Session(engine) as session:
@@ -80,12 +86,18 @@ async def stream_youtube(track_id: str) -> StreamingResponse:
                 track = session.exec(statement).first()
                 if track:
                     track.is_cached = True
-                    track.local_path = cache_path
+                    track.local_path = temp_path
                     session.add(track)
                     session.commit()
                     _logger.info("Database updated with cache path for: %s", track_id)
         except Exception:
             _logger.exception("Error while streaming/caching YouTube track: %s", track_id)
+        finally:
+            if not success and os.path.exists(download_path):
+                try:
+                    os.remove(download_path)
+                    _logger.info("Cleaned up partial download: %s", download_path)
+                except Exception: pass
 
     return StreamingResponse(iterate_stdout(), media_type="audio/mpeg")
 

@@ -1,4 +1,4 @@
-// ui.js - DOM & Rendering v2.7.5
+// ui.js - DOM & Rendering
 const UI = {
     initIcons: () => {
         if (window.lucide) {

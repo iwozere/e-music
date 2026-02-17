@@ -1,4 +1,4 @@
-// api.js - Network & Constants v2.7.5
+// api.js - Network & Constants
 const CONFIG = {
     apiBase: window.location.origin.includes('localhost') || window.location.origin.includes('127.0.0.1')
         ? window.location.origin
