@@ -1,5 +1,10 @@
+import 'dart:async';
+import 'dart:io';
+import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:just_audio/just_audio.dart';
+import 'package:audio_service/audio_service.dart';
+import '../audio_handler.dart';
 import '../../models/track.dart';
 import '../../repositories/track_repository.dart';
 
@@ -21,6 +26,10 @@ class PlayNextInQueue extends AudioPlayerEvent {}
 class PauseTrack extends AudioPlayerEvent {}
 
 class ResumeTrack extends AudioPlayerEvent {}
+
+class SkipNextEvent extends AudioPlayerEvent {}
+
+class SkipPreviousEvent extends AudioPlayerEvent {}
 
 class SeekTrackEvent extends AudioPlayerEvent {
   final Duration position;
@@ -45,6 +54,7 @@ class AudioPlayerState {
   final Duration position;
   final Duration duration;
   final PlayerState playerState;
+  final String? errorMessage;
 
   AudioPlayerState({
     this.currentTrack,
@@ -53,6 +63,7 @@ class AudioPlayerState {
     this.position = Duration.zero,
     this.duration = Duration.zero,
     required this.playerState,
+    this.errorMessage,
   });
 
   AudioPlayerState copyWith({
@@ -62,6 +73,7 @@ class AudioPlayerState {
     Duration? position,
     Duration? duration,
     PlayerState? playerState,
+    String? errorMessage,
   }) {
     return AudioPlayerState(
       currentTrack: currentTrack ?? this.currentTrack,
@@ -70,19 +82,29 @@ class AudioPlayerState {
       position: position ?? this.position,
       duration: duration ?? this.duration,
       playerState: playerState ?? this.playerState,
+      errorMessage: errorMessage,
     );
   }
 }
 
 class AudioPlayerBloc extends Bloc<AudioPlayerEvent, AudioPlayerState> {
-  final AudioPlayer _audioPlayer = AudioPlayer();
+  static const _lockChannel = MethodChannel('com.myspotify.mobile/locks');
+  final MyAudioHandler audioHandler;
   final TrackRepository trackRepository;
 
-  AudioPlayerBloc({required TrackRepository repository})
-    : trackRepository = repository,
-      super(
-        AudioPlayerState(playerState: PlayerState(false, ProcessingState.idle)),
-      ) {
+  AudioPlayer get _audioPlayer => audioHandler.player;
+
+  AudioPlayerBloc({
+    required TrackRepository repository,
+    required this.audioHandler,
+  }) : trackRepository = repository,
+       super(
+         AudioPlayerState(
+           playerState: PlayerState(false, ProcessingState.idle),
+         ),
+       ) {
+    _audioPlayer.setVolume(1.0);
+
     _audioPlayer.positionStream.listen((pos) {
       add(_UpdatePosition(pos));
     });
@@ -92,12 +114,36 @@ class AudioPlayerBloc extends Bloc<AudioPlayerEvent, AudioPlayerState> {
     });
 
     _audioPlayer.playerStateStream.listen((playerState) {
+      _loggerInfo(
+        'ProcessingState: ${playerState.processingState}, Playback: ${playerState.playing}',
+      );
       add(_UpdatePlayerState(playerState));
-      // Auto play next if finished
-      if (playerState.processingState == ProcessingState.completed) {
-        add(PlayNextInQueue());
+
+      if (playerState.playing) {
+        _acquireLocks();
+      } else if (playerState.processingState == ProcessingState.idle ||
+          playerState.processingState == ProcessingState.completed) {
+        _releaseLocks();
       }
     });
+
+    _audioPlayer.currentIndexStream.listen((index) {
+      if (index != null &&
+          state.queue.isNotEmpty &&
+          index < state.queue.length) {
+        add(_UpdateCurrentTrack(state.queue[index]));
+      }
+    });
+
+    _audioPlayer.playbackEventStream.listen(
+      (event) {
+        _loggerInfo('Playback event: ${event.processingState}');
+      },
+      onError: (Object e, StackTrace st) {
+        _loggerError('Playback stream error: $e');
+        add(_HandlePlaybackError(e.toString()));
+      },
+    );
 
     on<PlayTrackEvent>((event, emit) async {
       await _playTrack(event.track, emit);
@@ -115,34 +161,90 @@ class AudioPlayerBloc extends Bloc<AudioPlayerEvent, AudioPlayerState> {
 
     on<PlayPlaylistEvent>((event, emit) async {
       if (event.tracks.isNotEmpty) {
-        final firstTrack = event.tracks.first;
-        final remainingTracks = List<Track>.from(event.tracks)..removeAt(0);
-        emit(state.copyWith(queue: remainingTracks));
-        await _playTrack(firstTrack, emit);
+        emit(state.copyWith(queue: event.tracks, errorMessage: null));
+        try {
+          // Warm up DNS cache
+          try {
+            final uri = Uri.parse(trackRepository.apiClient.baseUrl);
+            if (uri.hasAuthority) {
+              _loggerInfo('Warming up DNS for ${uri.host}...');
+              InternetAddress.lookup(uri.host)
+                  .then((addresses) {
+                    _loggerInfo(
+                      'DNS lookup successful: ${addresses.length} addresses found.',
+                    );
+                  })
+                  .catchError((e) {
+                    _loggerError('DNS warm-up failed: $e');
+                    return null;
+                  });
+            }
+          } catch (e) {
+            _loggerError('Failed to parse baseUrl for DNS warm-up: $e');
+          }
+
+          final sources = event.tracks.map((track) {
+            final url = trackRepository.getStreamUrl(
+              track.remoteId ?? track.id,
+            );
+            return AudioSource.uri(
+              Uri.parse(url),
+              tag: MediaItem(
+                id: track.remoteId ?? track.id,
+                album: 'Album',
+                title: track.title,
+                artist: track.artist,
+                artUri: track.thumbnail != null
+                    ? Uri.parse(track.thumbnail!)
+                    : null,
+              ),
+            );
+          }).toList();
+
+          await audioHandler.stop();
+          await _audioPlayer.setAudioSources(sources, preload: false);
+          await audioHandler.play();
+
+          emit(
+            state.copyWith(currentTrack: event.tracks.first, isPlaying: true),
+          );
+        } catch (e) {
+          _loggerError('Error playing playlist: $e');
+          emit(state.copyWith(errorMessage: 'Playback error: $e'));
+        }
       }
     });
 
     on<PlayNextInQueue>((event, emit) async {
-      if (state.queue.isNotEmpty) {
-        final nextTrack = state.queue.first;
-        final newQueue = List<Track>.from(state.queue)..removeAt(0);
-        emit(state.copyWith(queue: newQueue));
-        await _playTrack(nextTrack, emit);
+      if (_audioPlayer.hasNext) {
+        await audioHandler.skipToNext();
+      }
+    });
+
+    on<SkipNextEvent>((event, emit) async {
+      if (_audioPlayer.hasNext) {
+        await audioHandler.skipToNext();
+      }
+    });
+
+    on<SkipPreviousEvent>((event, emit) async {
+      if (_audioPlayer.hasPrevious) {
+        await audioHandler.skipToPrevious();
       }
     });
 
     on<PauseTrack>((event, emit) {
-      _audioPlayer.pause();
+      audioHandler.pause();
       emit(state.copyWith(isPlaying: false));
     });
 
     on<ResumeTrack>((event, emit) {
-      _audioPlayer.play();
+      audioHandler.play();
       emit(state.copyWith(isPlaying: true));
     });
 
     on<SeekTrackEvent>((event, emit) {
-      _audioPlayer.seek(event.position);
+      audioHandler.seek(event.position);
     });
 
     on<_UpdatePosition>((event, emit) {
@@ -162,6 +264,18 @@ class AudioPlayerBloc extends Bloc<AudioPlayerEvent, AudioPlayerState> {
       );
     });
 
+    on<_UpdateCurrentTrack>((event, emit) async {
+      emit(state.copyWith(currentTrack: event.track));
+      if (state.isPlaying) {
+        await Future.delayed(const Duration(milliseconds: 300));
+        audioHandler.play();
+      }
+    });
+
+    on<_HandlePlaybackError>((event, emit) {
+      emit(state.copyWith(errorMessage: 'Playback Error: ${event.message}'));
+    });
+
     on<UpdateTrackLikedStatus>((event, emit) {
       if (state.currentTrack?.id == event.trackId) {
         final updatedTrack = state.currentTrack!.copyWith(
@@ -175,18 +289,64 @@ class AudioPlayerBloc extends Bloc<AudioPlayerEvent, AudioPlayerState> {
   Future<void> _playTrack(Track track, Emitter<AudioPlayerState> emit) async {
     final url = trackRepository.getStreamUrl(track.remoteId ?? track.id);
     try {
-      await _audioPlayer.setUrl(url);
-      _audioPlayer.play();
-      emit(state.copyWith(currentTrack: track, isPlaying: true));
-      trackRepository.playTrack(track.id); // fire and forget record play
+      final source = AudioSource.uri(
+        Uri.parse(url),
+        tag: MediaItem(
+          id: track.remoteId ?? track.id,
+          album: 'Album',
+          title: track.title,
+          artist: track.artist,
+          artUri: track.thumbnail != null ? Uri.parse(track.thumbnail!) : null,
+        ),
+      );
+      await _audioPlayer.setAudioSource(source, preload: false);
+      audioHandler.play();
+      emit(
+        state.copyWith(
+          currentTrack: track,
+          isPlaying: true,
+          queue: [track],
+          errorMessage: null,
+        ),
+      );
+      trackRepository.playTrack(track.id);
     } catch (e) {
-      // Log error properly
+      _loggerError('Error playing track ${track.id}: $e');
+      emit(state.copyWith(errorMessage: 'Playback error: $e'));
     }
+  }
+
+  Future<void> _acquireLocks() async {
+    try {
+      await _lockChannel.invokeMethod('acquireLocks');
+      _loggerInfo('Native locks acquired.');
+    } catch (e) {
+      _loggerError('Failed to acquire native locks: $e');
+    }
+  }
+
+  Future<void> _releaseLocks() async {
+    try {
+      await _lockChannel.invokeMethod('releaseLocks');
+      _loggerInfo('Native locks released.');
+    } catch (e) {
+      _loggerError('Failed to release native locks: $e');
+    }
+  }
+
+  void _loggerInfo(String message) {
+    // ignore: avoid_print
+    print('MYSPOTIFY_INFO: $message');
+  }
+
+  void _loggerError(String message) {
+    // ignore: avoid_print
+    print('MYSPOTIFY_ERROR: $message');
   }
 
   @override
   Future<void> close() {
-    _audioPlayer.dispose();
+    _releaseLocks();
     return super.close();
   }
 }
@@ -204,4 +364,14 @@ class _UpdateDuration extends AudioPlayerEvent {
 class _UpdatePlayerState extends AudioPlayerEvent {
   final PlayerState state;
   _UpdatePlayerState(this.state);
+}
+
+class _UpdateCurrentTrack extends AudioPlayerEvent {
+  final Track track;
+  _UpdateCurrentTrack(this.track);
+}
+
+class _HandlePlaybackError extends AudioPlayerEvent {
+  final String message;
+  _HandlePlaybackError(this.message);
 }

@@ -185,7 +185,11 @@ class PlayerScreen extends StatelessWidget {
                     ),
                     IconButton(
                       icon: const Icon(Icons.skip_previous, size: 36),
-                      onPressed: () {},
+                      onPressed: () {
+                        context.read<AudioPlayerBloc>().add(
+                          SkipPreviousEvent(),
+                        );
+                      },
                     ),
                     Container(
                       decoration: const BoxDecoration(
@@ -209,7 +213,9 @@ class PlayerScreen extends StatelessWidget {
                     ),
                     IconButton(
                       icon: const Icon(Icons.skip_next, size: 36),
-                      onPressed: () {},
+                      onPressed: () {
+                        context.read<AudioPlayerBloc>().add(SkipNextEvent());
+                      },
                     ),
                     IconButton(
                       icon: const Icon(Icons.repeat, color: Colors.white70),

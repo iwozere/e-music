@@ -3,7 +3,6 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../models/track.dart';
 import '../../repositories/track_repository.dart';
 import '../../logic/blocs/audio_player_bloc.dart';
-import '../widgets/mini_player.dart';
 import 'package:share_plus/share_plus.dart';
 
 class LikedSongsScreen extends StatefulWidget {
@@ -40,7 +39,17 @@ class _LikedSongsScreenState extends State<LikedSongsScreen> {
       appBar: AppBar(
         title: const Text('Liked Songs'),
         actions: [
-          if (_tracks.isNotEmpty)
+          if (_tracks.isNotEmpty) ...[
+            IconButton(
+              icon: const Icon(Icons.shuffle),
+              tooltip: 'Shuffle',
+              onPressed: () {
+                final shuffledTracks = List<Track>.from(_tracks)..shuffle();
+                context.read<AudioPlayerBloc>().add(
+                  PlayPlaylistEvent(shuffledTracks),
+                );
+              },
+            ),
             IconButton(
               icon: const Icon(Icons.play_circle_fill),
               tooltip: 'Play All',
@@ -48,6 +57,7 @@ class _LikedSongsScreenState extends State<LikedSongsScreen> {
                 context.read<AudioPlayerBloc>().add(PlayPlaylistEvent(_tracks));
               },
             ),
+          ],
           IconButton(
             icon: const Icon(Icons.share),
             onPressed: () {
@@ -58,52 +68,45 @@ class _LikedSongsScreenState extends State<LikedSongsScreen> {
           ),
         ],
       ),
-      body: Stack(
-        children: [
-          _isLoading
-              ? const Center(child: CircularProgressIndicator())
-              : _tracks.isEmpty
-              ? const Center(child: Text('No liked songs yet!'))
-              : ListView.builder(
-                  padding: const EdgeInsets.only(bottom: 100),
-                  itemCount: _tracks.length,
-                  itemBuilder: (context, index) {
-                    final track = _tracks[index];
-                    return ListTile(
-                      leading: track.thumbnail != null
-                          ? ClipRRect(
-                              borderRadius: BorderRadius.circular(4),
-                              child: Image.network(
-                                track.thumbnail!,
-                                width: 50,
-                                height: 50,
-                                fit: BoxFit.cover,
-                              ),
-                            )
-                          : const Icon(Icons.music_note),
-                      title: Text(track.title),
-                      subtitle: Text(track.artist ?? 'Unknown Artist'),
-                      trailing: IconButton(
-                        icon: const Icon(Icons.favorite, color: Colors.red),
-                        onPressed: () async {
-                          await context.read<TrackRepository>().likeTrack(
-                            track.id,
-                            isLiked: false,
-                          );
-                          _loadLikedTracks();
-                        },
-                      ),
-                      onTap: () {
-                        context.read<AudioPlayerBloc>().add(
-                          PlayTrackEvent(track),
-                        );
-                      },
-                    );
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : _tracks.isEmpty
+          ? const Center(child: Text('No liked songs yet!'))
+          : ListView.builder(
+              padding: const EdgeInsets.only(bottom: 20),
+              itemCount: _tracks.length,
+              itemBuilder: (context, index) {
+                final track = _tracks[index];
+                return ListTile(
+                  leading: track.thumbnail != null
+                      ? ClipRRect(
+                          borderRadius: BorderRadius.circular(4),
+                          child: Image.network(
+                            track.thumbnail!,
+                            width: 50,
+                            height: 50,
+                            fit: BoxFit.cover,
+                          ),
+                        )
+                      : const Icon(Icons.music_note),
+                  title: Text(track.title),
+                  subtitle: Text(track.artist ?? 'Unknown Artist'),
+                  trailing: IconButton(
+                    icon: const Icon(Icons.favorite, color: Colors.red),
+                    onPressed: () async {
+                      await context.read<TrackRepository>().likeTrack(
+                        track.id,
+                        isLiked: false,
+                      );
+                      _loadLikedTracks();
+                    },
+                  ),
+                  onTap: () {
+                    context.read<AudioPlayerBloc>().add(PlayTrackEvent(track));
                   },
-                ),
-          const Positioned(left: 0, right: 0, bottom: 0, child: MiniPlayer()),
-        ],
-      ),
+                );
+              },
+            ),
     );
   }
 }

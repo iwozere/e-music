@@ -3,7 +3,6 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../theme/app_colors.dart';
 import '../../repositories/track_repository.dart';
 import '../../models/track.dart';
-import '../widgets/mini_player.dart';
 import 'package:share_plus/share_plus.dart';
 import '../widgets/track_list_tile.dart';
 import '../../logic/blocs/audio_player_bloc.dart';
@@ -96,35 +95,31 @@ class _LibraryScreenState extends State<LibraryScreen> {
           ),
         ],
       ),
-      body: Stack(
-        children: [
-          _isLoading
-              ? const Center(child: CircularProgressIndicator())
-              : _playlists.isEmpty
-              ? const Center(
-                  child: Text('You haven\'t created any playlists yet.'),
-                )
-              : ListView.builder(
-                  padding: const EdgeInsets.only(bottom: 100),
-                  itemCount: _playlists.length,
-                  itemBuilder: (context, index) {
-                    final playlist = _playlists[index];
-                    return ListTile(
-                      leading: Container(
-                        width: 50,
-                        height: 50,
-                        decoration: BoxDecoration(
-                          color: AppColors.white.withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: Icon(
-                          Icons.playlist_play,
-                          color: AppColors.primary,
-                        ),
-                      ),
-                      title: Text(playlist['name'] ?? 'Untitled Playlist'),
-                      subtitle: const Text('Playlist'),
-                      trailing: IconButton(
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : _playlists.isEmpty
+          ? const Center(child: Text('You haven\'t created any playlists yet.'))
+          : ListView.builder(
+              padding: const EdgeInsets.only(bottom: 20),
+              itemCount: _playlists.length,
+              itemBuilder: (context, index) {
+                final playlist = _playlists[index];
+                return ListTile(
+                  leading: Container(
+                    width: 50,
+                    height: 50,
+                    decoration: BoxDecoration(
+                      color: AppColors.white.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Icon(Icons.playlist_play, color: AppColors.primary),
+                  ),
+                  title: Text(playlist['name'] ?? 'Untitled Playlist'),
+                  subtitle: const Text('Playlist'),
+                  trailing: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
                         icon: const Icon(Icons.share),
                         onPressed: () {
                           Share.share(
@@ -132,23 +127,89 @@ class _LibraryScreenState extends State<LibraryScreen> {
                           );
                         },
                       ),
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => PlaylistDetailScreen(
-                              playlistId: playlist['id'],
-                              name: playlist['name'],
+                      PopupMenuButton<String>(
+                        icon: const Icon(Icons.more_vert),
+                        onSelected: (value) async {
+                          if (value == 'delete') {
+                            final confirm = await showDialog<bool>(
+                              context: context,
+                              builder: (context) => AlertDialog(
+                                title: const Text('Delete Playlist'),
+                                content: Text(
+                                  'Are you sure you want to delete "${playlist['name']}"?',
+                                ),
+                                actions: [
+                                  TextButton(
+                                    onPressed: () =>
+                                        Navigator.pop(context, false),
+                                    child: const Text('Cancel'),
+                                  ),
+                                  TextButton(
+                                    onPressed: () =>
+                                        Navigator.pop(context, true),
+                                    child: const Text(
+                                      'Delete',
+                                      style: TextStyle(color: Colors.red),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            );
+
+                            if (confirm == true) {
+                              if (!context.mounted) return;
+                              final repository = context
+                                  .read<TrackRepository>();
+                              final messenger = ScaffoldMessenger.of(context);
+
+                              final success = await repository.deletePlaylist(
+                                playlist['id'],
+                              );
+
+                              if (success) {
+                                messenger.showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Playlist deleted'),
+                                  ),
+                                );
+                                _loadPlaylists();
+                              } else {
+                                messenger.showSnackBar(
+                                  const SnackBar(
+                                    content: Text('Failed to delete playlist'),
+                                  ),
+                                );
+                              }
+                            }
+                          }
+                        },
+                        itemBuilder: (context) => [
+                          const PopupMenuItem(
+                            value: 'delete',
+                            child: Text(
+                              'Delete Playlist',
+                              style: TextStyle(color: Colors.red),
                             ),
                           ),
-                        );
-                      },
+                        ],
+                      ),
+                    ],
+                  ),
+                  onTap: () async {
+                    final navigator = Navigator.of(context);
+                    await navigator.push(
+                      MaterialPageRoute(
+                        builder: (_) => PlaylistDetailScreen(
+                          playlistId: playlist['id'],
+                          name: playlist['name'],
+                        ),
+                      ),
                     );
+                    _loadPlaylists(); // Refresh after coming back
                   },
-                ),
-          const Positioned(left: 0, right: 0, bottom: 0, child: MiniPlayer()),
-        ],
-      ),
+                );
+              },
+            ),
     );
   }
 }
@@ -194,7 +255,17 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
       appBar: AppBar(
         title: Text(widget.name),
         actions: [
-          if (_tracks.isNotEmpty)
+          if (_tracks.isNotEmpty) ...[
+            IconButton(
+              icon: const Icon(Icons.shuffle),
+              tooltip: 'Shuffle',
+              onPressed: () {
+                final shuffledTracks = List<Track>.from(_tracks)..shuffle();
+                context.read<AudioPlayerBloc>().add(
+                  PlayPlaylistEvent(shuffledTracks),
+                );
+              },
+            ),
             IconButton(
               icon: const Icon(Icons.play_circle_fill),
               tooltip: 'Play All',
@@ -202,27 +273,73 @@ class _PlaylistDetailScreenState extends State<PlaylistDetailScreen> {
                 context.read<AudioPlayerBloc>().add(PlayPlaylistEvent(_tracks));
               },
             ),
-        ],
-      ),
-      body: Stack(
-        children: [
-          _isLoading
-              ? const Center(child: CircularProgressIndicator())
-              : ListView.builder(
-                  padding: const EdgeInsets.only(bottom: 100),
-                  itemCount: _tracks.length,
-                  itemBuilder: (context, index) {
-                    final track = _tracks[index];
-                    return TrackListTile(
-                      track: track,
-                      playlistId: widget.playlistId,
-                      onRemove: _loadTracks,
-                    );
-                  },
+          ],
+          IconButton(
+            icon: const Icon(Icons.delete_outline),
+            tooltip: 'Delete Playlist',
+            onPressed: () async {
+              final confirm = await showDialog<bool>(
+                context: context,
+                builder: (context) => AlertDialog(
+                  title: const Text('Delete Playlist'),
+                  content: Text(
+                    'Are you sure you want to delete "${widget.name}"?',
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context, false),
+                      child: const Text('Cancel'),
+                    ),
+                    TextButton(
+                      onPressed: () => Navigator.pop(context, true),
+                      child: const Text(
+                        'Delete',
+                        style: TextStyle(color: Colors.red),
+                      ),
+                    ),
+                  ],
                 ),
-          const Positioned(left: 0, right: 0, bottom: 0, child: MiniPlayer()),
+              );
+
+              if (confirm == true) {
+                if (!context.mounted) return;
+                final repository = context.read<TrackRepository>();
+                final navigator = Navigator.of(context);
+                final messenger = ScaffoldMessenger.of(context);
+
+                final success = await repository.deletePlaylist(
+                  widget.playlistId,
+                );
+
+                if (success) {
+                  navigator.pop();
+                  messenger.showSnackBar(
+                    const SnackBar(content: Text('Playlist deleted')),
+                  );
+                } else {
+                  messenger.showSnackBar(
+                    const SnackBar(content: Text('Failed to delete playlist')),
+                  );
+                }
+              }
+            },
+          ),
         ],
       ),
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : ListView.builder(
+              padding: const EdgeInsets.only(bottom: 20),
+              itemCount: _tracks.length,
+              itemBuilder: (context, index) {
+                final track = _tracks[index];
+                return TrackListTile(
+                  track: track,
+                  playlistId: widget.playlistId,
+                  onRemove: _loadTracks,
+                );
+              },
+            ),
     );
   }
 }

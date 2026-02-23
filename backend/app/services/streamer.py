@@ -69,8 +69,8 @@ async def stream_youtube(track_id: str) -> StreamingResponse:
         try:
             with open(download_path, "wb") as cache_file:
                 while True:
-                    # Larger read buffer for stdout to reduce syscalls/waiting
-                    chunk = await process.stdout.read(128 * 1024)  # 128KB chunks
+                    # Smaller read buffer (8KB) to be more mobile-friendly and avoid large initial chunk stalls
+                    chunk = await process.stdout.read(8 * 1024) 
                     if not chunk:
                         break
                     cache_file.write(chunk)
@@ -100,6 +100,7 @@ async def stream_youtube(track_id: str) -> StreamingResponse:
                     _logger.info("Cleaned up partial download: %s", download_path)
                 except Exception: pass
 
+    # Use audio/mpeg as a reliable fallback, but the yield loop ensures we stream whatever yt-dlp provides
     return StreamingResponse(iterate_stdout(), media_type="audio/mpeg")
 
 def get_local_stream(file_path: str) -> FileResponse:

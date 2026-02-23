@@ -100,3 +100,10 @@ MySpotify is a self-hosted music ecosystem with a centralized backend and multi-
 - **Theme**: Obsidian/Glassmorphism (Dark Mode).
 - **Icons**: Use [Lucide Icons](https://lucide.dev) for consistency across platforms.
 - **Targets**: Ensure touch targets are at least 44x44 points.
+
+### Future iOS Compatibility Note (Audio)
+- **Latent Streaming**: Apple's `AVPlayer` is extremely sensitive to initial byte latency.
+- **Requirements**:
+    - Backend must serve audio in small chunks (8KB recommended) to ensure rapid first-byte delivery.
+    - Client timeouts must be configured to at least 30s to allow for YouTube proxy spin-up time.
+    - Proper `Accept-Ranges` support is mandatory for seeking in `AVPlayer`.
