@@ -473,6 +473,10 @@ async def search(
     Search for tracks across local library and YouTube Music.
     Uses in-memory caching to optimize paginated requests.
     """
+    if not q or not q.strip():
+        _logger.info("Empty search query received, returning empty list")
+        return []
+
     _logger.info("Searching for: %s (offset: %s, limit: %s)", q, offset, limit)
     
     # 1. Check Cache
@@ -982,8 +986,16 @@ async def stream_track(track_id: str, session: Session = Depends(get_session)) -
     track = session.exec(statement).first()
     
     if track and track.is_cached and track.local_path:
-        _logger.info("Streaming from local cache: %s", track.local_path)
-        return streamer.get_local_stream(track.local_path)
+        if os.path.exists(track.local_path):
+            _logger.info("Streaming from local cache: %s", track.local_path)
+            return streamer.get_local_stream(track.local_path)
+        else:
+            _logger.warning("Track marked as cached but file missing: %s. Falling back to YT.", track.local_path)
+            # Update DB to reflect reality
+            track.is_cached = False
+            track.local_path = None
+            session.add(track)
+            session.commit()
     
     _logger.info("Streaming from YouTube: %s", track.remote_id if track else track_id)
     return await streamer.stream_youtube(track.remote_id if track else track_id)

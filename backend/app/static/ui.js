@@ -29,9 +29,21 @@ const UI = {
             if (title) {
                 viewTitle.style.display = 'block';
                 if (state.currentView === 'playlist' || state.currentView === 'liked') {
-                    viewTitle.innerHTML = `${title} <button class="btn-primary" style="width: auto; padding: 8px 16px; margin-left: 16px; font-size: 14px;" onclick="playAll()">
-                        <i data-lucide="play" style="width: 14px; height: 14px; margin-right: 4px;"></i> Play All
-                    </button>`;
+                    viewTitle.innerHTML = `
+                        <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+                            ${title}
+                            <button class="btn-primary" style="width: auto; min-height: 44px; padding: 8px 20px; font-size: 14px; display: flex; align-items: center;" onclick="playAll()">
+                                <i data-lucide="play" style="width: 16px; height: 16px; margin-right: 8px;"></i> Play All
+                            </button>
+                            <button class="btn-primary" style="width: auto; min-height: 44px; padding: 8px 20px; font-size: 14px; background: var(--bg-glass); border: 1px solid var(--primary); display: flex; align-items: center;" onclick="playRandom()">
+                                <i data-lucide="shuffle" style="width: 16px; height: 16px; margin-right: 8px;"></i> Play Random
+                            </button>
+                            ${state.currentView === 'playlist' ? `
+                                <button class="btn-primary" style="width: auto; min-height: 44px; padding: 8px 20px; font-size: 14px; background: #ef444422; border: 1px solid #ef4444; color: #ef4444; display: flex; align-items: center;" onclick="deleteCurrentPlaylist()">
+                                    <i data-lucide="trash-2" style="width: 16px; height: 16px; margin-right: 8px;"></i> Delete
+                                </button>
+                            ` : ''}
+                        </div>`;
                 } else {
                     viewTitle.innerText = title;
                 }
@@ -207,8 +219,32 @@ const UI = {
         if (overlay) overlay.classList.toggle('active', isActive);
 
         if (isActive) UI.renderQueue();
+    },
+
+    deleteCurrentPlaylist: async () => {
+        if (!state.currentPlaylistId) return;
+
+        const confirmDelete = window.confirm("Are you sure you want to delete this playlist? This action cannot be undone.");
+        if (!confirmDelete) return;
+
+        try {
+            const res = await API.deletePlaylist(state.currentPlaylistId);
+            if (res.ok) {
+                UI.showToast("Playlist deleted successfully");
+                // Navigate back to library
+                const navLibrary = document.querySelector('.nav-item[data-view="library"]');
+                if (navLibrary) navLibrary.click();
+            } else {
+                const err = await res.json();
+                UI.showToast("Error: " + (err.detail || "Failed to delete"));
+            }
+        } catch (e) {
+            UI.showToast("Connection error");
+        }
     }
 };
 
 window.UI = UI;
 window.toggleQueue = UI.toggleQueue;
+window.deleteCurrentPlaylist = UI.deleteCurrentPlaylist;
+window.playRandom = window.playRandom || (() => console.warn("playRandom not loaded"));

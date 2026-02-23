@@ -333,8 +333,8 @@ body {
     background: rgba(0, 0, 0, 0.6);
     border: none;
     color: white;
-    width: 32px;
-    height: 32px;
+    width: 44px;
+    height: 44px;
     border-radius: 50%;
     display: flex;
     align-items: center;
@@ -346,6 +346,17 @@ body {
 .card-action-btn:hover {
     background: var(--primary);
     transform: scale(1.1);
+}
+
+.control-btn.play {
+    background: var(--text-main);
+    color: var(--bg-dark);
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
 .btn-sidebar-toggle {

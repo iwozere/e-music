@@ -80,7 +80,9 @@ window.playTrack = async (trackId, title, artist, thumbnail) => {
     const audio = document.getElementById('main-audio');
     const playBtn = document.getElementById('btn-play');
 
-    state.currentTrackIndex = state.currentTracksContext.findIndex(t => (t.id || t.remote_id) === trackId);
+    state.currentTrackIndex = state.currentTracksContext.findIndex(t =>
+        (t.id && t.id === trackId) || (t.remote_id && t.remote_id === trackId)
+    );
 
     document.getElementById('player-title').innerText = title || "Unknown Title";
     document.getElementById('player-artist').innerText = artist || "Unknown Artist";
@@ -158,6 +160,22 @@ window.playAll = () => {
         state.queue = []; // Clear queue when playing context
         const first = state.currentTracksContext[0];
         playTrack(first.id || first.remote_id, first.title, first.artist, first.thumbnail);
+    }
+};
+
+window.playRandom = () => {
+    if (state.currentTracksContext.length > 0) {
+        state.queue = [];
+        // Fisher-Yates Shuffle
+        const shuffled = [...state.currentTracksContext];
+        for (let i = shuffled.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+        }
+        state.currentTracksContext = shuffled;
+        const first = shuffled[0];
+        playTrack(first.id || first.remote_id, first.title, first.artist, first.thumbnail);
+        UI.showToast("Shuffling playback");
     }
 };
 
