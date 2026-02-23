@@ -274,6 +274,13 @@ window.loadLibrary = async () => {
     state.currentView = 'library';
     state.currentPlaylistId = null;
     const trackList = document.getElementById('track-list');
+    const viewTitle = document.querySelector('#content-view h1');
+
+    if (viewTitle) {
+        viewTitle.style.display = 'block';
+        viewTitle.innerText = "Your Library";
+    }
+
     trackList.innerHTML = '<div class="loading-spinner"></div>';
 
     try {

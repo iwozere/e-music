@@ -29,22 +29,27 @@ const UI = {
             if (title) {
                 viewTitle.style.display = 'block';
                 if (state.currentView === 'playlist' || state.currentView === 'liked') {
+                    viewTitle.style.display = 'flex';
+                    viewTitle.style.alignItems = 'center';
+                    viewTitle.style.gap = '16px';
+                    viewTitle.style.flexWrap = 'wrap';
                     viewTitle.innerHTML = `
-                        <div style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
-                            ${title}
-                            <button class="btn-primary" style="width: auto; min-height: 44px; padding: 8px 20px; font-size: 14px; display: flex; align-items: center;" onclick="playAll()">
+                        <span style="flex-shrink: 0;">${title}</span>
+                        <div style="display: flex; gap: 12px; align-items: center;">
+                            <button class="btn-primary header-btn" style="width: auto; position: relative; z-index: 10;" onclick="playAll()">
                                 <i data-lucide="play" style="width: 16px; height: 16px; margin-right: 8px;"></i> Play All
                             </button>
-                            <button class="btn-primary" style="width: auto; min-height: 44px; padding: 8px 20px; font-size: 14px; background: var(--bg-glass); border: 1px solid var(--primary); display: flex; align-items: center;" onclick="playRandom()">
+                            <button class="btn-primary header-btn" style="width: auto; background: var(--bg-glass); border: 1px solid var(--primary); position: relative; z-index: 10;" onclick="playRandom()">
                                 <i data-lucide="shuffle" style="width: 16px; height: 16px; margin-right: 8px;"></i> Play Random
                             </button>
                             ${state.currentView === 'playlist' ? `
-                                <button class="btn-primary" style="width: auto; min-height: 44px; padding: 8px 20px; font-size: 14px; background: #ef444422; border: 1px solid #ef4444; color: #ef4444; display: flex; align-items: center;" onclick="deleteCurrentPlaylist()">
+                                <button class="btn-primary header-btn" style="width: auto; background: #ef444422; border: 1px solid #ef4444; color: #ef4444; position: relative; z-index: 10;" onclick="deleteCurrentPlaylist()">
                                     <i data-lucide="trash-2" style="width: 16px; height: 16px; margin-right: 8px;"></i> Delete
                                 </button>
                             ` : ''}
                         </div>`;
                 } else {
+                    viewTitle.style.display = 'block';
                     viewTitle.innerText = title;
                 }
             } else {

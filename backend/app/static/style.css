@@ -712,6 +712,16 @@ body {
     transform: translateY(-2px);
 }
 
+.header-btn {
+    width: auto !important;
+    min-height: 44px !important;
+    padding: 8px 20px !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    font-size: 14px !important;
+}
+
 /* Queue Sidebar Refining */
 .queue-sidebar {
     position: fixed;
