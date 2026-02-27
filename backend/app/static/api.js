@@ -16,16 +16,16 @@ const apiFetch = async (endpoint, options = {}) => {
 };
 
 const API = {
-    search: (query, offset, limit) =>
-        apiFetch(`/search?q=${encodeURIComponent(query)}&offset=${offset}&limit=${limit}`),
+    search: (query, offset, limit, options) =>
+        apiFetch(`/search?q=${encodeURIComponent(query)}&offset=${offset}&limit=${limit}`, options),
 
-    getPopular: (offset, limit) =>
-        apiFetch(`/tracks/popular?offset=${offset}&limit=${limit}`),
+    getPopular: (offset, limit, options) =>
+        apiFetch(`/tracks/popular?offset=${offset}&limit=${limit}`, options),
 
     getLiked: () => apiFetch('/tracks/liked'),
 
-    getRecent: (offset, limit) =>
-        apiFetch(`/tracks/recent?offset=${offset}&limit=${limit}`),
+    getRecent: (offset, limit, options) =>
+        apiFetch(`/tracks/recent?offset=${offset}&limit=${limit}`, options),
 
     toggleLike: (trackId, isLiked) =>
         apiFetch(`/tracks/${trackId}/like?is_liked=${!isLiked}`, { method: 'POST' }),

@@ -1,5 +1,5 @@
 // main.js - Entry Point
-console.log("MySpotify v2.8.4 - Refactored");
+console.log("MySpotify v2.9.1 - Refactored");
 
 const state = {
     user: null,
@@ -53,11 +53,11 @@ const performSearch = async (query, append = false) => {
     try {
         let res;
         if (state.currentView === 'home') {
-            res = await fetch(`${CONFIG.apiBase}/tracks/popular?offset=${state.searchMeta.offset}&limit=${state.searchMeta.limit}`, { signal });
+            res = await API.getPopular(state.searchMeta.offset, state.searchMeta.limit, { signal });
         } else if (state.currentView === 'recent') {
-            res = await fetch(`${CONFIG.apiBase}/tracks/recent?offset=${state.searchMeta.offset}&limit=${state.searchMeta.limit}`, { signal });
+            res = await API.getRecent(state.searchMeta.offset, state.searchMeta.limit, { signal });
         } else {
-            res = await fetch(`${CONFIG.apiBase}/search?q=${encodeURIComponent(query)}&offset=${state.searchMeta.offset}&limit=${state.searchMeta.limit}`, { signal });
+            res = await API.search(query, state.searchMeta.offset, state.searchMeta.limit, { signal });
         }
 
         if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);

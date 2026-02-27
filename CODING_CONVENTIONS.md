@@ -15,6 +15,10 @@ It is intended for both human developers and AI agents contributing to the codeb
 - One public class or function per file, if possible.
 - Always use **.venv** for Python virtual environments.
 - Always increase the version number in `README.md` and `index.html` files when making changes.
+- **Web UI Versioning**: When modifying files in `backend/app/static/`, you **MUST**:
+    1.  Update the version string in `index.html` (e.g., in the sidebar footer).
+    2.  Update the version in the `console.log` at the top of `main.js`.
+    3.  Update the version query parameter `?v=X.X.X` for all script and link tags in `index.html` to ensure cache busting.
 
 ---
 
