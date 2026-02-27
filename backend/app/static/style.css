@@ -313,11 +313,11 @@ body {
 
 .card-actions {
     position: absolute;
-    top: 24px;
-    right: 24px;
+    top: 16px;
+    right: 16px;
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 6px;
     opacity: 0;
     transform: translateX(10px);
     transition: var(--transition);
@@ -333,8 +333,8 @@ body {
     background: rgba(0, 0, 0, 0.6);
     border: none;
     color: white;
-    width: 44px;
-    height: 44px;
+    width: 36px;
+    height: 36px;
     border-radius: 50%;
     display: flex;
     align-items: center;

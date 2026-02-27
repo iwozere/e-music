@@ -17,7 +17,8 @@ const state = {
     },
     currentTracksContext: [],
     currentTrackIndex: -1,
-    currentPlaylistId: null
+    currentPlaylistId: null,
+    searchAbortController: null // To cancel previous search requests
 };
 
 // --- Core Logic ---
@@ -30,7 +31,14 @@ const debounce = (func, delay) => {
 };
 
 const performSearch = async (query, append = false) => {
-    if (state.searchMeta.isFetching) return;
+    // Cancel any ongoing search request
+    if (state.searchAbortController) {
+        state.searchAbortController.abort();
+    }
+    state.searchAbortController = new AbortController();
+    const signal = state.searchAbortController.signal;
+
+    if (state.searchMeta.isFetching && append) return;
 
     if (!append) {
         state.searchMeta.offset = 0;
@@ -45,26 +53,39 @@ const performSearch = async (query, append = false) => {
     try {
         let res;
         if (state.currentView === 'home') {
-            res = await API.getPopular(state.searchMeta.offset, state.searchMeta.limit);
+            res = await fetch(`${CONFIG.apiBase}/tracks/popular?offset=${state.searchMeta.offset}&limit=${state.searchMeta.limit}`, { signal });
         } else if (state.currentView === 'recent') {
-            res = await API.getRecent(state.searchMeta.offset, state.searchMeta.limit);
+            res = await fetch(`${CONFIG.apiBase}/tracks/recent?offset=${state.searchMeta.offset}&limit=${state.searchMeta.limit}`, { signal });
         } else {
-            res = await API.search(query, state.searchMeta.offset, state.searchMeta.limit);
+            res = await fetch(`${CONFIG.apiBase}/search?q=${encodeURIComponent(query)}&offset=${state.searchMeta.offset}&limit=${state.searchMeta.limit}`, { signal });
         }
 
+        if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
         const tracks = await res.json();
+
+        // If query cleared, and we were in search, reload home
+        if (query === '' && state.currentView === 'search') {
+            state.searchAbortController = null;
+            return loadHome();
+        }
+
         state.searchMeta.hasMore = tracks.length === state.searchMeta.limit;
 
-        let title = append ? null : (state.currentView === 'home' ? null : null); // Always null now for search
+        let title = append ? null : (state.currentView === 'home' ? null : null);
         UI.renderTracks(tracks, title, append);
         state.searchMeta.offset += tracks.length;
-        return tracks; // Return tracks for awaiting
+        return tracks;
     } catch (err) {
-        console.error("Search failed:", err);
+        if (err.name === 'AbortError') {
+            console.log("Search aborted");
+        } else {
+            console.error("Search failed:", err);
+        }
         return [];
     } finally {
         state.searchMeta.isFetching = false;
         UI.setLoading(false);
+        state.searchAbortController = null;
     }
 };
 
@@ -125,12 +146,19 @@ const initEventListeners = () => {
         debouncedSearch(query);
     });
 
+    searchInput?.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            const query = e.target.value;
+            performSearch(query);
+        }
+    });
+
     clearBtn?.addEventListener('click', () => {
         if (searchInput) {
             searchInput.value = '';
             searchInput.focus();
             clearBtn.classList.remove('visible');
-            performSearch('');
+            loadHome();
         }
     });
 
