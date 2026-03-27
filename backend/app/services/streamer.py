@@ -60,67 +60,96 @@ async def stream_youtube(track_id: str) -> StreamingResponse:
     os.makedirs(PERSISTENT_CACHE_DIR, exist_ok=True)
     os.makedirs(TEMP_CACHE_DIR, exist_ok=True)
 
-    # Construct yt-dlp command to stream audio to stdout
+    # Construct transcoding pipeline
     cmd = [
         "yt-dlp",
         "-f", "bestaudio",
-        "-o", "-",  # Output to stdout
+        "-o", "-", 
         f"https://www.youtube.com/watch?v={track_id}"
     ]
+
+    ffmpeg_cmd = [
+        "ffmpeg",
+        "-i", "pipe:0",
+        "-f", "mp3",
+        "-acodec", "libmp3lame",
+        "-ab", "128k",
+        "pipe:1"
+    ]
     
-    process = await asyncio.create_subprocess_exec(
-        *cmd,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE
-    )
+    try:
+        process = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        ffmpeg_process = await asyncio.create_subprocess_exec(
+            *ffmpeg_cmd,
+            stdin=process.stdout,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+    except FileNotFoundError as e:
+        _logger.error("Required dependency (yt-dlp or ffmpeg) not found: %s", str(e))
+        raise
 
     download_path = f"{temp_path}.download"
 
     async def iterate_stdout() -> AsyncGenerator[bytes, None]:
         """
-        Background iterator to stream bytes and write to temp cache file simultaneously.
+        Stream from ffmpeg stdout and cache simultaneously.
         """
         success = False
+        bytes_yielded = 0
         try:
             with open(download_path, "wb") as cache_file:
                 while True:
-                    # Smaller read buffer (8KB) to be more mobile-friendly and avoid large initial chunk stalls
-                    chunk = await process.stdout.read(8 * 1024) 
+                    chunk = await ffmpeg_process.stdout.read(16 * 1024) 
                     if not chunk:
                         break
                     cache_file.write(chunk)
                     yield chunk
+                    bytes_yielded += len(chunk)
             
-            # Atomic rename only if we reached the end successfully
-            if os.path.exists(download_path):
+            # Wait for processes
+            await asyncio.gather(process.wait(), ffmpeg_process.wait())
+            
+            if process.returncode != 0:
+                _, stderr = await process.communicate()
+                _logger.error("yt-dlp failed: %s", stderr.decode().strip())
+                return
+
+            if ffmpeg_process.returncode != 0:
+                _logger.error("ffmpeg failed with code %s", ffmpeg_process.returncode)
+                return
+
+            # Atomic rename
+            if os.path.exists(download_path) and bytes_yielded > 0:
                 os.rename(download_path, temp_path)
-            success = True
-            _logger.info("Atomic cache complete for track: %s", track_id)
+                success = True
+                _logger.info("Atomic cache complete: %s (%s bytes)", track_id, bytes_yielded)
             
-            # After completion, update DB
-            with Session(engine) as session:
-                statement = select(Track).where(Track.remote_id == track_id)
-                track = session.exec(statement).first()
-                if track:
-                    track.is_cached = True
-                    track.local_path = temp_path
-                    session.add(track)
-                    session.commit()
-                    _logger.info("Database updated with cache path for: %s", track_id)
+            if success:
+                # Update DB
+                with Session(engine) as session:
+                    statement = select(Track).where(Track.remote_id == track_id)
+                    track = session.exec(statement).first()
+                    if track:
+                        track.is_cached = True
+                        track.local_path = temp_path
+                        session.add(track)
+                        session.commit()
         except Exception:
-            _logger.exception("Error while streaming/caching YouTube track: %s", track_id)
+            _logger.exception("Streaming error for track: %s", track_id)
         finally:
-            # Signal completion and cleanup registry
             download_event.set()
             _active_downloads.pop(track_id, None)
-            
             if not success and os.path.exists(download_path):
-                try:
-                    os.remove(download_path)
-                    _logger.info("Cleaned up partial download: %s", download_path)
-                except Exception: pass
+                try: os.remove(download_path)
+                except: pass
 
-    # Use audio/mpeg as a reliable fallback, but the yield loop ensures we stream whatever yt-dlp provides
+    # On Windows, we need to be careful with the mime-type if it's actually Opus/WebM.
+    # However, Chrome handles most things. If it's failing, it's likely an empty stream.
     return StreamingResponse(iterate_stdout(), media_type="audio/mpeg")
 
 def get_local_stream(file_path: str) -> FileResponse:

@@ -17,7 +17,7 @@ const apiFetch = async (endpoint, options = {}) => {
 
 const API = {
     search: (query, offset, limit, options) =>
-        apiFetch(`/search?q=${encodeURIComponent(query)}&offset=${offset}&limit=${limit}`, options),
+        apiFetch(`/tracks/search?q=${encodeURIComponent(query)}&offset=${offset}&limit=${limit}`, options),
 
     getPopular: (offset, limit, options) =>
         apiFetch(`/tracks/popular?offset=${offset}&limit=${limit}`, options),
@@ -62,7 +62,9 @@ const API = {
 
     checkAuth: (token) => fetch(`${CONFIG.apiBase}/auth/me`, {
         headers: { 'Authorization': `Bearer ${token}` }
-    })
+    }),
+
+    getSystemConfig: () => fetch(`${CONFIG.apiBase}/system/config`)
 };
 
 // Explicit exports for global scope

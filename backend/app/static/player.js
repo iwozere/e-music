@@ -104,7 +104,9 @@ window.playTrack = async (trackId, title, artist, thumbnail) => {
     }
 
     if (audio) {
-        audio.src = `${CONFIG.apiBase}/stream/${trackId}`;
+        const streamUrl = `${CONFIG.apiBase}/tracks/stream/${trackId}`;
+        console.log("[Player] Setting audio source:", streamUrl);
+        audio.src = streamUrl;
         try {
             await audio.play();
             if (playBtn) playBtn.innerHTML = '<i data-lucide="pause"></i>';

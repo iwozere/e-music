@@ -111,6 +111,18 @@ const initApp = async () => {
     await loadHome();
     console.log('[App] First view loaded');
 
+    // Fetch system configuration (Google Client ID, etc.)
+    try {
+        const configRes = await API.getSystemConfig();
+        if (configRes.ok) {
+            const sysConfig = await configRes.json();
+            CONFIG.googleClientId = sysConfig.google_client_id;
+            console.log('[App] System config loaded');
+        }
+    } catch (e) {
+        console.error('[App] Failed to load system config:', e);
+    }
+
     if (!state.user) {
         initGoogleLogin();
     }
@@ -125,7 +137,7 @@ const initGoogleLogin = () => {
         if (window.google?.accounts) {
             clearInterval(checkGoogle);
             window.google.accounts.id.initialize({
-                client_id: '342747071263-p0a752cdvvj39kuvfsnp2pabrqvb1ivs.apps.googleusercontent.com',
+                client_id: CONFIG.googleClientId || 'default_client_id',
                 ux_mode: 'redirect',
                 login_uri: `${CONFIG.apiBase}/auth/google/login`
             });
