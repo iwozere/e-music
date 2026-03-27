@@ -6,11 +6,28 @@ const CONFIG = {
 
 const apiFetch = async (endpoint, options = {}) => {
     const token = localStorage.getItem('token');
-    const headers = {
-        'Authorization': `Bearer ${token}`,
-        ...options.headers
-    };
-    return fetch(`${CONFIG.apiBase}${endpoint}`, { ...options, headers });
+    const headers = { ...options.headers };
+    // Only attach auth header when a real token exists — avoids sending 'Bearer null'
+    if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+    }
+    
+    // Add 30s timeout
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000);
+    
+    try {
+        const response = await fetch(`${CONFIG.apiBase}${endpoint}`, { 
+            ...options, 
+            headers,
+            signal: controller.signal
+        });
+        clearTimeout(timeoutId);
+        return response;
+    } catch (e) {
+        clearTimeout(timeoutId);
+        throw e;
+    }
 };
 
 const API = {

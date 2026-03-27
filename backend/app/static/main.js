@@ -69,7 +69,9 @@ const performSearch = async (query, append = false) => {
             return loadHome();
         }
 
-        state.searchMeta.hasMore = tracks.length === state.searchMeta.limit;
+        // Stop only on a genuinely empty page — a short page can be caused by deduplication
+        // on the server side, not necessarily exhausted results.
+        state.searchMeta.hasMore = tracks.length > 0;
 
         let title = append ? null : (state.currentView === 'home' ? null : null);
         UI.renderTracks(tracks, title, append);
@@ -118,20 +120,27 @@ const initApp = async () => {
 
     // Google Login
     // For local development, allow viewing home tracks even if not logged in
-    console.log('[App] Initializing first view...');
-    await loadHome();
-    console.log('[App] First view loaded');
+    try {
+        console.log('[App] Loading home tracks...');
+        await loadHome();
+        console.log('[App] Home tracks loaded.');
+    } catch (e) {
+        console.error('[App] Failed to load home tracks:', e);
+    }
 
     // Fetch system configuration (Google Client ID, etc.)
     try {
+        console.log('[App] Fetching system config...');
         const configRes = await API.getSystemConfig();
         if (configRes.ok) {
             const sysConfig = await configRes.json();
             CONFIG.googleClientId = sysConfig.google_client_id;
-            console.log('[App] System config loaded');
+            console.log('[App] System config loaded.');
+        } else {
+            console.warn('[App] Failed to fetch system config:', configRes.status);
         }
     } catch (e) {
-        console.error('[App] Failed to load system config:', e);
+        console.error('[App] Error during system config fetch:', e);
     }
 
     if (!state.user) {
@@ -141,6 +150,9 @@ const initApp = async () => {
     PLAYER.init();
     initEventListeners();
     initInfiniteScroll();
+    
+    console.log('[App] Initialization complete.');
+    UI.setLoading(false);
 };
 
 const initGoogleLogin = () => {
@@ -233,20 +245,14 @@ const initInfiniteScroll = () => {
 
     const observer = new IntersectionObserver((entries) => {
         const entry = entries[0];
-        console.log(`[InfiniteScroll] Intersection detected: isIntersecting=${entry.isIntersecting}, ratio=${entry.intersectionRatio.toFixed(2)}`);
-
         if (entry.isIntersecting && state.searchMeta.hasMore && !state.searchMeta.isFetching) {
-            console.log('[InfiniteScroll] Triggering load for view:', state.currentView, 'query:', state.searchMeta.query);
-            if (state.searchMeta.query) {
-                performSearch(state.searchMeta.query, true);
-            } else if (state.currentView === 'home' || state.currentView === 'search' || state.currentView === 'recent') {
-                loadHomeTracks(true);
-            }
+            console.log('[InfiniteScroll] Triggering loadMore');
+            loadMore();
         }
     }, {
         root: scrollContainer,
-        threshold: 0.01, // Slightly above 0 to avoid jitter
-        rootMargin: '100px' // Much smaller margin for reliability
+        threshold: 0.01,
+        rootMargin: '100px'
     });
 
     observer.observe(trigger);
@@ -264,6 +270,14 @@ window.loadRecentSongs = async () => {
     state.currentView = 'recent';
     state.currentPlaylistId = null;
     return loadHomeTracks(false);
+};
+
+window.loadMore = async () => {
+    if (state.searchMeta.query) {
+        return performSearch(state.searchMeta.query, true);
+    } else {
+        return loadHomeTracks(true);
+    }
 };
 
 window.loadHomeTracks = async (append = false) => {
@@ -388,6 +402,12 @@ window.loadLibrary = async () => {
 };
 
 window.toggleLike = async (trackId, el) => {
+    // Guard: show login modal immediately without a network round-trip
+    if (!state.user) {
+        UI.showToast("Login required to like tracks!");
+        document.getElementById('auth-modal').style.display = 'flex';
+        return;
+    }
     const isLiked = state.likedTrackIds.has(trackId);
     try {
         const res = await API.toggleLike(trackId, isLiked);

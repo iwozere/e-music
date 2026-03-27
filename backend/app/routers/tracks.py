@@ -1,4 +1,6 @@
 import asyncio
+import os
+import time
 from datetime import datetime, timezone
 from typing import List, Optional, Any
 from fastapi import APIRouter, HTTPException, Depends
@@ -26,7 +28,7 @@ async def search(
     offset: int = 0,
     limit: int = 20,
     session: Session = Depends(get_session), 
-    current_user: Optional[User] = Depends(get_current_user)
+    current_user: Optional[User] = Depends(get_optional_user)
 ) -> List[dict]:
     """
     Search for tracks across local library and YouTube Music.
@@ -36,74 +38,99 @@ async def search(
         _logger.info("Empty search query received, returning empty list")
         return []
 
+    start_time = time.time()
     _logger.info("Searching for: %s (offset: %s, limit: %s)", q, offset, limit)
     
-    # 1. Check Cache
-    now = datetime.now().timestamp()
-    if q in SEARCH_CACHE and SEARCH_CACHE[q]["expires"] > now:
-        _logger.info("Serving YouTube results from cache for: %s", q)
-        yt_results = SEARCH_CACHE[q]["results"]
-    else:
-        # Fetch a large batch to pre-populate future pages
-        yt_limit = 100 
-        try:
-            yt_results = await asyncio.to_thread(search_youtube, q, limit=yt_limit)
-            SEARCH_CACHE[q] = {
-                "results": yt_results,
-                "expires": now + CACHE_TTL
-            }
-        except Exception:
-            _logger.exception("YouTube Search Error")
-            yt_results = []
+    # 1. Search local DB (Python-side filtering for robust Cyrillic support)
+    q_lower = q.lower()
     
-    # 2. Search local DB (fast) with pagination
-    statement = select(Track).where(
-        or_(
-            Track.title.contains(q),
-            Track.artist.contains(q),
-            Track.album.contains(q)
-        )
-    ).offset(offset).limit(limit)
-    local_results = session.exec(statement).all()
-        
-    final_results = []
-    cached_tracks = {t.remote_id: t for t in local_results if t.remote_id}
+    # We fetch all tracks; with 3000-5000 tracks this is extremely fast and more reliable than SQLite LOWER
+    all_local_db = session.exec(select(Track)).all()
     
-    # Add local results first
-    final_results.extend([t.dict() for t in local_results])
+    all_local = []
+    for t in all_local_db:
+        # Check title, artist, or album
+        search_target = f"{t.title or ''} {t.artist or ''} {t.album or ''}".lower()
+        if q_lower in search_target:
+            all_local.append(t)
     
-    # Slice YT results to match the current "page"
-    current_yt_page = yt_results[offset:offset+limit] if len(yt_results) > offset else []
+    local_count = len(all_local)
+    _logger.info("Local search complete in %.3fs: %s matches.", time.time() - start_time, local_count)
+    
+    local_results = []
+    if offset < local_count:
+        local_results = all_local[offset : offset + limit]
+    
+    # 2. YouTube Search (Virtual Pagination)
+    needed_from_yt = limit - len(local_results)
+    yt_offset = max(0, offset - local_count)
 
-    # Add YT results if not already present in local results
-    for yt_item in current_yt_page:
-        remote_id = yt_item["remote_id"]
-        if remote_id not in cached_tracks:
-            db_track = session.exec(select(Track).where(Track.remote_id == remote_id)).first()
-            if db_track:
-                # Lazy backfill: Update thumbnail if missing
-                if yt_item.get("thumbnail") and not db_track.thumbnail:
-                    db_track.thumbnail = yt_item["thumbnail"]
-                    session.add(db_track)
-                    session.commit()
-                    session.refresh(db_track)
-                final_results.append(db_track.dict())
-                cached_tracks[remote_id] = db_track
-            else:
-                final_results.append(yt_item)
-                cached_tracks[remote_id] = yt_item
-            
-    # Enrich with liked status
+    yt_data: list = []
+    if needed_from_yt > 0:
+        now = datetime.now().timestamp()
+        if q in SEARCH_CACHE and SEARCH_CACHE[q]["expires"] > now:
+            yt_data = SEARCH_CACHE[q]["results"]
+        else:
+            try:
+                yt_data = await asyncio.to_thread(search_youtube, q, limit=100)
+                SEARCH_CACHE[q] = {"results": yt_data, "expires": now + CACHE_TTL}
+            except Exception:
+                _logger.exception("YouTube Search Error")
+                yt_data = []
+
+    # 3. Assemble final results — local tracks first, then YouTube with dedup compensation.
+    # Instead of a fixed slice, walk the YT cache with a sliding window so that
+    # items skipped by deduplication are replaced by the next available result.
+    local_ids_in_results = {t.id for t in local_results}
+
+    final_results = []
+    for t in local_results:
+        d = t.dict()
+        d["is_cached"] = t.is_cached
+        final_results.append(d)
+
+    if needed_from_yt > 0 and yt_data:
+        WINDOW = needed_from_yt * 3  # over-fetch factor to cover expected duplicates
+        scan_pos = yt_offset
+
+        while len(final_results) < limit and scan_pos < len(yt_data):
+            window = yt_data[scan_pos : scan_pos + WINDOW]
+            scan_pos += len(window)
+
+            # Batch-resolve which window items already exist in the local DB
+            window_remote_ids = [item["remote_id"] for item in window if item.get("remote_id")]
+            db_matches: dict = {}
+            if window_remote_ids:
+                stmt = select(Track).where(Track.remote_id.in_(window_remote_ids))
+                db_matches = {m.remote_id: m for m in session.exec(stmt).all()}
+
+            for yt_item in window:
+                if len(final_results) >= limit:
+                    break
+                remote_id = yt_item.get("remote_id")
+                if remote_id in db_matches:
+                    db_track = db_matches[remote_id]
+                    if db_track.id not in local_ids_in_results:
+                        # Already indexed locally — use the richer DB record
+                        d = db_track.dict()
+                        d["is_cached"] = db_track.is_cached
+                        final_results.append(d)
+                        local_ids_in_results.add(db_track.id)  # prevent re-adding same track
+                    # else: duplicate of something already on this page — skip silently
+                else:
+                    final_results.append(yt_item)
+
+    # 4. Enrich with liked status
     if current_user:
-        likes_statement = select(UserActivity).where(
+        likes_stmt = select(UserActivity.track_id).where(
             UserActivity.user_id == current_user.id, 
             UserActivity.is_liked == True
         )
-        likes = {a.track_id for a in session.exec(likes_statement).all()}
+        likes = set(session.exec(likes_stmt).all())
         for item in final_results:
-            item["is_liked"] = (item.get("id") in likes) or \
-                (session.exec(select(Track.id).where(Track.remote_id == item.get("remote_id"))).first() in likes)
+            item["is_liked"] = item.get("id") in likes
 
+    _logger.info("Search returned %s total results in %.3fs for: %s", len(final_results), time.time() - start_time, q)
     return final_results
 
 @router.get("/popular")
@@ -211,11 +238,15 @@ async def get_recent_tracks(
 async def track_played(
     track_id: str, 
     session: Session = Depends(get_session), 
-    current_user: User = Depends(get_current_user)
+    current_user: Optional[User] = Depends(get_optional_user)
 ) -> dict:
     """
     Record a play event for a track and increment play count.
     """
+    if not current_user:
+        _logger.debug("Guest play event for track %s (not recorded)", track_id)
+        return {"status": "ignored"}
+
     _logger.info("User %s played track %s", current_user.id, track_id)
     track = await ensure_track_exists(session, track_id)
     
@@ -312,7 +343,7 @@ async def get_track(
 async def get_related(
     track_id: str, 
     session: Session = Depends(get_session),
-    current_user: User = Depends(get_current_user)
+    current_user: Optional[User] = Depends(get_optional_user)
 ) -> List[dict]:
     """
     Radio Mode: Fetch related tracks based on a track ID.
@@ -330,20 +361,30 @@ async def stream_track(track_id: str, session: Session = Depends(get_session)) -
     """
     Stream a track's audio data.
     """
-    import os
     _logger.info("Streaming request for: %s", track_id)
     statement = select(Track).where(or_(Track.id == track_id, Track.remote_id == track_id))
     track = session.exec(statement).first()
     
     if track and track.is_cached and track.local_path:
         if os.path.exists(track.local_path):
-            _logger.info("Streaming from local cache: %s", track.local_path)
-            return streamer.get_local_stream(track.local_path)
+            file_size = os.path.getsize(track.local_path)
+            if file_size > 0:
+                _logger.info("Streaming from local cache: %s (%s bytes)", track.local_path, file_size)
+                return streamer.get_local_stream(track.local_path)
+            else:
+                _logger.warning("Empty file found at: %s. Re-streaming from YT.", track.local_path)
+                # Mark as not cached so we re-download it
+                track.is_cached = False
+                track.local_path = None
+                session.add(track)
+                session.commit()
+                # Fall through to YT stream
         else:
             _logger.warning("Track marked as cached but file missing: %s. Falling back to YT.", track.local_path)
             track.is_cached = False
             track.local_path = None
             session.add(track)
+            session.commit()
             session.commit()
     
     _logger.info("Streaming from YouTube: %s", track.remote_id if track else track_id)

@@ -1,7 +1,16 @@
+"""
+Streaming service for MySpotify.
+
+Uses subprocess.Popen (not asyncio.create_subprocess_exec) so it works on
+both Windows SelectorEventLoop and Linux EpollEventLoop.
+FastAPI automatically runs sync generators in a thread-pool executor.
+"""
 import os
-import asyncio
-import typing
-from typing import AsyncGenerator, Any, Generator
+import sys
+import shutil
+import subprocess
+import threading
+from typing import Dict, Generator
 
 from fastapi import HTTPException
 from fastapi.responses import StreamingResponse, FileResponse
@@ -9,188 +18,205 @@ from sqlmodel import Session, select
 
 from app.models import Track
 from app.db import engine
+from app.config import settings
 from app.utils.logger import setup_logger
 
 _logger = setup_logger(__name__)
 
-from app.config import settings
-
 PERSISTENT_CACHE_DIR: str = settings.CACHE_DIR
 TEMP_CACHE_DIR: str = settings.TEMP_DIR
 
-# Registry to track active downloads and prevent duplicate yt-dlp processes
-_active_downloads: typing.Dict[str, asyncio.Event] = {}
+# Registry to prevent duplicate yt-dlp processes for the same track
+_active_downloads: Dict[str, threading.Event] = {}
+_active_downloads_lock = threading.Lock()
+
+
+def _find_executable(name: str) -> str:
+    """Find an executable in PATH or the current venv's Scripts/bin directory."""
+    found = shutil.which(name)
+    if found:
+        return found
+    # Fallback: look next to the Python interpreter (inside venv)
+    if sys.platform == "win32":
+        venv_bin = os.path.join(os.path.dirname(sys.executable), f"{name}.exe")
+    else:
+        venv_bin = os.path.join(os.path.dirname(sys.executable), name)
+    if os.path.exists(venv_bin):
+        return venv_bin
+    return name  # let the OS raise FileNotFoundError if missing
+
 
 async def stream_youtube(track_id: str) -> StreamingResponse:
     """
-    Stream audio from YouTube using yt-dlp and cache it locally in the background.
-
-    Args:
-        track_id: The YouTube video ID or remote ID.
-
-    Returns:
-        A FastAPI StreamingResponse.
+    Stream audio from YouTube using yt-dlp → ffmpeg pipeline.
+    Returns a StreamingResponse backed by a synchronous generator so it is
+    compatible with Windows SelectorEventLoop and Linux EpollEventLoop.
     """
-    # 1. Check if already in persistent cache
+    # 1. Serve from persistent cache
     persistent_path = os.path.join(PERSISTENT_CACHE_DIR, f"{track_id}.mp3")
     if os.path.exists(persistent_path):
-        _logger.info("Serving track from persistent cache: %s", track_id)
+        _logger.info("Serving from persistent cache: %s", track_id)
         return get_local_stream(persistent_path)
 
-    # 2. Check if in temp cache
+    # 2. Serve from temp cache
     temp_path = os.path.join(TEMP_CACHE_DIR, f"{track_id}.mp3")
     if os.path.exists(temp_path):
-        _logger.info("Serving track from temporary cache: %s", track_id)
+        _logger.info("Serving from temp cache: %s", track_id)
         return get_local_stream(temp_path)
 
-    # 3. Check if download is already in progress by another request
-    if track_id in _active_downloads:
-        _logger.info("Download already in progress for %s. Waiting for completion...", track_id)
-        await _active_downloads[track_id].wait()
-        # After waiting, the file should be in the temp cache
+    # 3. Wait if a download for this track_id is already running
+    with _active_downloads_lock:
+        existing_event = _active_downloads.get(track_id)
+
+    if existing_event is not None:
+        _logger.info("Download in progress for %s — waiting…", track_id)
+        existing_event.wait(timeout=60)
         if os.path.exists(temp_path):
             return get_local_stream(temp_path)
-        # If it failed or was removed, fall through to start a new one
+        # Download failed for the other waiter; fall through and try ourselves
 
-    # 4. Starting new download
-    _logger.info("Initializing YouTube stream for track: %s", track_id)
-    download_event = asyncio.Event()
-    _active_downloads[track_id] = download_event
-    
-    # Ensure cache dirs exist
+    # 4. Pre-flight checks
+    yt_dlp_path = _find_executable("yt-dlp")
+    ffmpeg_path  = _find_executable("ffmpeg")
+
+    if not shutil.which(yt_dlp_path):
+        _logger.error("yt-dlp not found at: %s", yt_dlp_path)
+        raise HTTPException(status_code=503,
+                            detail="yt-dlp missing — run: pip install yt-dlp")
+    if not shutil.which(ffmpeg_path):
+        _logger.error("ffmpeg not found at: %s", ffmpeg_path)
+        raise HTTPException(status_code=503,
+                            detail="ffmpeg missing — install it and add to PATH")
+
+    # 5. Register download
+    done_event = threading.Event()
+    with _active_downloads_lock:
+        _active_downloads[track_id] = done_event
+
     os.makedirs(PERSISTENT_CACHE_DIR, exist_ok=True)
     os.makedirs(TEMP_CACHE_DIR, exist_ok=True)
 
-    def find_executable(name: str) -> str:
-        """Find executable in PATH or current venv."""
-        import shutil
-        import sys
-        
-        # Try finding in PATH
-        found = shutil.which(name)
-        if found:
-            return found
-            
-        # Try finding in venv Scripts/bin
-        if sys.platform == "win32":
-            venv_bin = os.path.join(os.path.dirname(sys.executable), f"{name}.exe")
-            if os.path.exists(venv_bin):
-                return venv_bin
-        else:
-            venv_bin = os.path.join(os.path.dirname(sys.executable), name)
-            if os.path.exists(venv_bin):
-                return venv_bin
-        return name # Fallback to original name (let subprocess_exec try)
-
-    # Resolve executable paths
-    yt_dlp_path = find_executable("yt-dlp")
-    ffmpeg_path = find_executable("ffmpeg")
-
-    # Construct transcoding pipeline
-    cmd = [
+    yt_cmd = [
         yt_dlp_path,
         "-f", "bestaudio",
-        "-o", "-", 
-        f"https://www.youtube.com/watch?v={track_id}"
+        "-o", "-",
+        f"https://www.youtube.com/watch?v={track_id}",
     ]
-
     ffmpeg_cmd = [
         ffmpeg_path,
         "-i", "pipe:0",
         "-f", "mp3",
         "-acodec", "libmp3lame",
         "-ab", "128k",
-        "pipe:1"
+        "-loglevel", "error",
+        "pipe:1",
     ]
-    
-    try:
-        process = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
-        )
-        ffmpeg_process = await asyncio.create_subprocess_exec(
-            *ffmpeg_cmd,
-            stdin=process.stdout,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
-        )
-    except FileNotFoundError as e:
-        _logger.error("Required dependency not found! yt-dlp: %s, ffmpeg: %s. Error: %s", yt_dlp_path, ffmpeg_path, str(e))
-        # Return a simple error response instead of 500
-        raise HTTPException(status_code=503, detail="Streaming services unavailable (missing dependencies)")
-    except Exception as e:
-        _logger.exception("Subprocess execution failed")
-        raise HTTPException(status_code=500, detail=str(e))
 
     download_path = f"{temp_path}.download"
+    _logger.info("Starting yt-dlp+ffmpeg pipeline for: %s", track_id)
 
-    async def iterate_stdout() -> AsyncGenerator[bytes, None]:
+    def _stream_sync() -> Generator[bytes, None, None]:
         """
-        Stream from ffmpeg stdout and cache simultaneously.
+        Synchronous generator — FastAPI runs this in a threadpool executor.
+        Pipes yt-dlp → ffmpeg → HTTP response, caching to disk simultaneously.
         """
         success = False
         bytes_yielded = 0
+        yt_proc = None
+        ff_proc  = None
         try:
+            # Use CREATE_NO_WINDOW on Windows to suppress console pop-ups
+            popen_kwargs: dict = {}
+            if sys.platform == "win32":
+                popen_kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+
+            yt_proc = subprocess.Popen(
+                yt_cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                **popen_kwargs,
+            )
+            ff_proc = subprocess.Popen(
+                ffmpeg_cmd,
+                stdin=yt_proc.stdout,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                **popen_kwargs,
+            )
+            # Close yt_proc.stdout in the parent so ffmpeg gets EOF when yt-dlp exits
+            if yt_proc.stdout:
+                yt_proc.stdout.close()
+
             with open(download_path, "wb") as cache_file:
                 while True:
-                    chunk = await ffmpeg_process.stdout.read(16 * 1024) 
+                    chunk = ff_proc.stdout.read(16 * 1024)
                     if not chunk:
                         break
                     cache_file.write(chunk)
                     yield chunk
                     bytes_yielded += len(chunk)
-            
-            # Wait for processes
-            await asyncio.gather(process.wait(), ffmpeg_process.wait())
-            
-            if process.returncode != 0:
-                _, stderr = await process.communicate()
-                _logger.error("yt-dlp failed: %s", stderr.decode().strip())
+
+            yt_proc.wait()
+            ff_proc.wait()
+
+            if yt_proc.returncode != 0:
+                err = (yt_proc.stderr.read() or b"").decode(errors="replace").strip()
+                _logger.error("yt-dlp exited %d: %s", yt_proc.returncode, err)
+                return
+            if ff_proc.returncode != 0:
+                err = (ff_proc.stderr.read() or b"").decode(errors="replace").strip()
+                _logger.error("ffmpeg exited %d: %s", ff_proc.returncode, err)
                 return
 
-            if ffmpeg_process.returncode != 0:
-                _logger.error("ffmpeg failed with code %s", ffmpeg_process.returncode)
-                return
-
-            # Atomic rename
-            if os.path.exists(download_path) and bytes_yielded > 0:
+            if bytes_yielded > 0 and os.path.exists(download_path):
+                if os.path.exists(temp_path):
+                    os.remove(temp_path)
                 os.rename(download_path, temp_path)
                 success = True
-                _logger.info("Atomic cache complete: %s (%s bytes)", track_id, bytes_yielded)
-            
-            if success:
-                # Update DB
-                with Session(engine) as session:
-                    statement = select(Track).where(Track.remote_id == track_id)
-                    track = session.exec(statement).first()
-                    if track:
-                        track.is_cached = True
-                        track.local_path = temp_path
-                        session.add(track)
-                        session.commit()
-        except Exception:
-            _logger.exception("Streaming error for track: %s", track_id)
-        finally:
-            download_event.set()
-            _active_downloads.pop(track_id, None)
-            if not success and os.path.exists(download_path):
-                try: os.remove(download_path)
-                except: pass
+                _logger.info("Cached %s (%d bytes)", track_id, bytes_yielded)
 
-    # On Windows, we need to be careful with the mime-type if it's actually Opus/WebM.
-    # However, Chrome handles most things. If it's failing, it's likely an empty stream.
-    return StreamingResponse(iterate_stdout(), media_type="audio/mpeg")
+        except Exception:
+            _logger.exception("Streaming pipeline error for %s", track_id)
+        finally:
+            # Kill processes if still running
+            for proc in (ff_proc, yt_proc):
+                if proc and proc.poll() is None:
+                    try:
+                        proc.kill()
+                    except Exception:
+                        pass
+
+            # Clean up partial download
+            if not success and os.path.exists(download_path):
+                try:
+                    os.remove(download_path)
+                except Exception:
+                    pass
+
+            # Signal waiting threads
+            done_event.set()
+            with _active_downloads_lock:
+                _active_downloads.pop(track_id, None)
+
+            # Update DB (we are already in a thread, so sync Session is fine)
+            if success:
+                try:
+                    with Session(engine) as session:
+                        track = session.exec(
+                            select(Track).where(Track.remote_id == track_id)
+                        ).first()
+                        if track:
+                            track.is_cached = True
+                            track.local_path = temp_path
+                            session.add(track)
+                            session.commit()
+                except Exception:
+                    _logger.exception("Failed to update DB for %s", track_id)
+
+    return StreamingResponse(_stream_sync(), media_type="audio/mpeg")
+
 
 def get_local_stream(file_path: str) -> FileResponse:
-    """
-    Stream a local audio file using FileResponse for HTTP Range support.
-
-    Args:
-        file_path: Absolute path to the local audio file.
-
-    Returns:
-        A FastAPI FileResponse.
-    """
-    _logger.info("Streaming local file via FileResponse: %s", file_path)
+    """Stream a local audio file with HTTP Range support."""
+    _logger.info("Streaming local file: %s", file_path)
     return FileResponse(file_path, media_type="audio/mpeg")

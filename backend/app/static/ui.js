@@ -79,7 +79,7 @@ const UI = {
             return `
                 <div class="track-card animate-fade">
                     <div class="card-image-container" onclick="playTrack('${id}', '${safeTitle}', '${safeArtist}', '${thumb}')">
-                        <img src="${thumb}" class="track-image">
+                        <img src="${thumb}" class="track-image" onerror="this.src='https://images.unsplash.com/photo-1493225255756-d9584f8606e9?w=300&q=80'">
                         <div class="source-indicator" title="Source: ${track.source_type}">
                             <i data-lucide="${sourceIcon}"></i>
                         </div>
@@ -142,7 +142,7 @@ const UI = {
                 // Restore manual load button as a fallback
                 trigger.innerHTML = `
                     <span>End of the road?</span>
-                    <button class="btn-primary" onclick="loadHomeTracks(true)" style="width: auto; padding: 8px 16px; font-size: 13px;">
+                    <button class="btn-primary" onclick="loadMore()" style="width: auto; padding: 8px 16px; font-size: 13px;">
                         Try Manual Load
                     </button>
                 `;
@@ -203,7 +203,7 @@ const UI = {
 
             return `
                 <div class="queue-item">
-                    <img src="${thumb}" class="queue-img">
+                    <img src="${thumb}" class="queue-img" onerror="this.src='https://images.unsplash.com/photo-1493225255756-d9584f8606e9?w=300&q=80'">
                     <div class="queue-info">
                         <div class="q-title">${track.title}</div>
                         <div class="q-artist">${track.artist}</div>

@@ -1,3 +1,4 @@
+
 import os
 import threading
 from contextlib import asynccontextmanager
@@ -33,6 +34,16 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Start watcher in background
     watcher_thread = threading.Thread(target=start_watcher, args=(settings.MUSIC_PATH,), daemon=True)
     watcher_thread.start()
+    
+    # Print DB diagnostics
+    from sqlmodel import Session, select, func
+    from app.models import Track
+    from app.db import engine
+    with Session(engine) as session:
+        count = session.exec(select(func.count(Track.id))).one()
+        _logger.info("Database loaded. Total tracks indexed: %s", count)
+        if count == 0:
+            _logger.warning("No tracks found in database! Please check your MUSIC_PATH or DB file.")
     
     _logger.info("Startup complete")
     yield
@@ -82,3 +93,4 @@ if os.path.exists(static_dir):
         return FileResponse(os.path.join(static_dir, "index.html"))
 else:
     _logger.warning("Web static folder '%s' not found. Frontend will not be served.", static_dir)
+

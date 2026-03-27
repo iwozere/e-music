@@ -9,7 +9,7 @@ _logger = setup_logger(__name__)
 # For SQLite, we need to allow same thread if using with FastAPI
 uri: str = settings.DATABASE_URL
 if uri.startswith("sqlite"):
-    connect_args = {"check_same_thread": False}
+    connect_args = {"check_same_thread": False, "timeout": 30}
 else:
     connect_args = {}
 

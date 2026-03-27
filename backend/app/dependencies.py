@@ -7,7 +7,10 @@ from app.db import get_session
 from app.models import User
 from app.auth_utils import verify_token
 
+# Strict scheme: raises 401 if Authorization header is missing (used for required auth)
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/token")
+# Lenient scheme: returns None if Authorization header is missing (used for optional auth)
+oauth2_scheme_optional = OAuth2PasswordBearer(tokenUrl="auth/token", auto_error=False)
 
 async def get_current_user(
     token: str = Depends(oauth2_scheme), 
@@ -26,7 +29,7 @@ async def get_current_user(
     return user
 
 async def get_optional_user(
-    token: Optional[str] = Depends(oauth2_scheme), 
+    token: Optional[str] = Depends(oauth2_scheme_optional),
     session: Session = Depends(get_session)
 ) -> Optional[User]:
     """
