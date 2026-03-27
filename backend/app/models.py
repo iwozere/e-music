@@ -28,7 +28,7 @@ class Track(SQLModel, table=True):
     artist: Optional[str] = Field(default=None, index=True)
     album: Optional[str] = Field(default=None, index=True)
     source_type: str  # 'local', 'youtube'
-    remote_id: Optional[str] = None
+    remote_id: Optional[str] = Field(default=None, unique=True, index=True)
     local_path: Optional[str] = None
     is_cached: bool = Field(default=False)
     duration: Optional[int] = None

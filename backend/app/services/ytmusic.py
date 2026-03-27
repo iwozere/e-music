@@ -1,13 +1,28 @@
-from typing import List, Dict
-
+from typing import List, Dict, Optional
 from ytmusicapi import YTMusic
-
 from app.utils.logger import setup_logger
 
 _logger = setup_logger(__name__)
 
-# Initialize YTMusic (using guest mode for now to avoid requiring browser auth)
+# Initialize YTMusic
 yt: YTMusic = YTMusic()
+
+async def get_track_thumbnail(video_id: str) -> Optional[str]:
+    """
+    Fetch the high-res thumbnail URL for a YouTube video ID.
+    """
+    _logger.info("Fetching thumbnail for: %s", video_id)
+    try:
+        import asyncio
+        yt_info = await asyncio.to_thread(yt.get_song, video_id)
+        if yt_info and "videoDetails" in yt_info:
+            details = yt_info["videoDetails"]
+            thumbnails = details.get("thumbnail", {}).get("thumbnails", [])
+            if thumbnails:
+                return thumbnails[-1].get("url")
+    except Exception:
+        _logger.warning("Failed to fetch thumbnail for %s", video_id)
+    return None
 
 def search_youtube(query: str, limit: int = 20) -> List[Dict]:
     """
@@ -39,7 +54,7 @@ def search_youtube(query: str, limit: int = 20) -> List[Dict]:
     except Exception:
         _logger.exception("YouTube Music API search failed")
         return []
-def get_related_tracks(video_id: str, limit: int = 20) -> List[Dict]:
+async def get_related_tracks(video_id: str, limit: int = 20) -> List[Dict]:
     """
     Fetch related tracks based on a video ID (Radio Mode).
     """

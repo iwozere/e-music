@@ -51,7 +51,11 @@ void main() async {
     ),
   );
 
-  final apiClient = ApiClient(baseUrl: 'https://api.e-music.win');
+  const String apiBaseUrl = String.fromEnvironment(
+    'API_BASE_URL',
+    defaultValue: 'https://api.e-music.win',
+  );
+  final apiClient = ApiClient(baseUrl: apiBaseUrl);
   final authRepository = AuthRepository(apiClient: apiClient);
   final trackRepository = TrackRepository(apiClient: apiClient);
 

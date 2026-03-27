@@ -38,7 +38,7 @@ It is intended for both human developers and AI agents contributing to the codeb
 
   import pandas as pd
 
-  from src.util.helpers import my_helper
+  from app.utils.helpers import my_helper
   ```
 
 ### 2.1 Path Setup for Project Root
@@ -88,7 +88,7 @@ Try to keep all __init__.py files empty for all packages unless it is absolutely
 * All modules should initialize the logger as:
 
   ```python
-  from src.notification.logger import setup_logger
+  from app.utils.logger import setup_logger
   _logger = setup_logger(__name__)
   ```
 
@@ -198,6 +198,15 @@ Try to keep all __init__.py files empty for all packages unless it is absolutely
 
   * Function names: `test_<functionality>`
   * Example: `test_add_two_numbers`
+
+---
+
+## 10. Modular Architecture (FastAPI)
+
+- **Routers**: Decompose large modules into domain-specific routers located in `app/routers/`.
+- **Dependencies**: Use `app/dependencies.py` for shared FastAPI dependencies.
+- **Services**: Business logic that is shared across routers or is highly complex should reside in `app/services/`.
+- **Lifespan**: Use the FastAPI `lifespan` context manager for startup and shutdown logic instead of deprecated `@app.on_event` hooks.
 
 ---
 

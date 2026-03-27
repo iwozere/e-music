@@ -17,6 +17,9 @@ from app.config import settings
 PERSISTENT_CACHE_DIR: str = settings.CACHE_DIR
 TEMP_CACHE_DIR: str = settings.TEMP_DIR
 
+# Registry to track active downloads and prevent duplicate yt-dlp processes
+_active_downloads: typing.Dict[str, asyncio.Event] = {}
+
 async def stream_youtube(track_id: str) -> StreamingResponse:
     """
     Stream audio from YouTube using yt-dlp and cache it locally in the background.
@@ -39,7 +42,19 @@ async def stream_youtube(track_id: str) -> StreamingResponse:
         _logger.info("Serving track from temporary cache: %s", track_id)
         return get_local_stream(temp_path)
 
+    # 3. Check if download is already in progress by another request
+    if track_id in _active_downloads:
+        _logger.info("Download already in progress for %s. Waiting for completion...", track_id)
+        await _active_downloads[track_id].wait()
+        # After waiting, the file should be in the temp cache
+        if os.path.exists(temp_path):
+            return get_local_stream(temp_path)
+        # If it failed or was removed, fall through to start a new one
+
+    # 4. Starting new download
     _logger.info("Initializing YouTube stream for track: %s", track_id)
+    download_event = asyncio.Event()
+    _active_downloads[track_id] = download_event
     
     # Ensure cache dirs exist
     os.makedirs(PERSISTENT_CACHE_DIR, exist_ok=True)
@@ -77,7 +92,8 @@ async def stream_youtube(track_id: str) -> StreamingResponse:
                     yield chunk
             
             # Atomic rename only if we reached the end successfully
-            os.rename(download_path, temp_path)
+            if os.path.exists(download_path):
+                os.rename(download_path, temp_path)
             success = True
             _logger.info("Atomic cache complete for track: %s", track_id)
             
@@ -94,6 +110,10 @@ async def stream_youtube(track_id: str) -> StreamingResponse:
         except Exception:
             _logger.exception("Error while streaming/caching YouTube track: %s", track_id)
         finally:
+            # Signal completion and cleanup registry
+            download_event.set()
+            _active_downloads.pop(track_id, None)
+            
             if not success and os.path.exists(download_path):
                 try:
                     os.remove(download_path)
