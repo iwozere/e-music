@@ -46,6 +46,21 @@ def _find_executable(name: str) -> str:
     return name  # let the OS raise FileNotFoundError if missing
 
 
+def validate_cache_file(path: str, min_size: int = 100 * 1024) -> bool:
+    """Check if a file exists and is reasonably large (e.g., > 100KB for an MP3)."""
+    if not os.path.exists(path):
+        return False
+    size = os.path.getsize(path)
+    if size < min_size:
+        _logger.warning("Cache file %s is suspiciously small (%d bytes). Deleting.", path, size)
+        try:
+            os.remove(path)
+        except Exception:
+            pass
+        return False
+    return True
+
+
 async def stream_youtube(track_id: str) -> StreamingResponse:
     """
     Stream audio from YouTube using yt-dlp → ffmpeg pipeline.
@@ -54,14 +69,14 @@ async def stream_youtube(track_id: str) -> StreamingResponse:
     """
     # 1. Serve from persistent cache
     persistent_path = os.path.join(PERSISTENT_CACHE_DIR, f"{track_id}.mp3")
-    if os.path.exists(persistent_path):
-        _logger.info("Serving from persistent cache: %s", track_id)
+    if validate_cache_file(persistent_path):
+        _logger.info("Serving from healthy persistent cache: %s", track_id)
         return get_local_stream(persistent_path)
 
     # 2. Serve from temp cache
     temp_path = os.path.join(TEMP_CACHE_DIR, f"{track_id}.mp3")
-    if os.path.exists(temp_path):
-        _logger.info("Serving from temp cache: %s", track_id)
+    if validate_cache_file(temp_path):
+        _logger.info("Serving from healthy temp cache: %s", track_id)
         return get_local_stream(temp_path)
 
     # 3. Wait if a download for this track_id is already running

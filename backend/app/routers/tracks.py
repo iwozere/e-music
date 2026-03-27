@@ -359,33 +359,35 @@ async def get_related(
 @router.get("/stream/{track_id}")
 async def stream_track(track_id: str, session: Session = Depends(get_session)) -> Any:
     """
-    Stream a track's audio data.
+    Stream a track's audio data with robust cache validation and fallback.
     """
     _logger.info("Streaming request for: %s", track_id)
     statement = select(Track).where(or_(Track.id == track_id, Track.remote_id == track_id))
     track = session.exec(statement).first()
     
+    # Check cache validity (min 100KB for audio)
     if track and track.is_cached and track.local_path:
         if os.path.exists(track.local_path):
             file_size = os.path.getsize(track.local_path)
-            if file_size > 0:
+            # Basic sanity check: an audio file should be > 100KB unless it's a very short sound
+            if file_size > 100 * 1024:
                 _logger.info("Streaming from local cache: %s (%s bytes)", track.local_path, file_size)
                 return streamer.get_local_stream(track.local_path)
             else:
-                _logger.warning("Empty file found at: %s. Re-streaming from YT.", track.local_path)
+                _logger.warning("Cache file %s is suspiciously small (%d bytes). Invaliding.", track.local_path, file_size)
                 # Mark as not cached so we re-download it
                 track.is_cached = False
                 track.local_path = None
                 session.add(track)
                 session.commit()
-                # Fall through to YT stream
+                # Proceed to stream_youtube fallback
         else:
-            _logger.warning("Track marked as cached but file missing: %s. Falling back to YT.", track.local_path)
+            _logger.warning("Track marked as cached but file missing at: %s. Falling back to YT.", track.local_path)
             track.is_cached = False
             track.local_path = None
             session.add(track)
             session.commit()
-            session.commit()
+            # Proceed to stream_youtube fallback
     
     _logger.info("Streaming from YouTube: %s", track.remote_id if track else track_id)
     return await streamer.stream_youtube(track.remote_id if track else track_id)
