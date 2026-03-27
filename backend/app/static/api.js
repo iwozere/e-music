@@ -1,8 +1,6 @@
 // api.js - Network & Constants
 const CONFIG = {
-    apiBase: window.location.origin.includes('localhost') || window.location.origin.includes('127.0.0.1')
-        ? window.location.origin
-        : 'https://api.e-music.win',
+    apiBase: window.location.origin,
     googleBtnId: 'google-login-btn'
 };
 

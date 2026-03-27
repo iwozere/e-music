@@ -249,12 +249,9 @@ async def google_login_redirect(
         )
         
         # Redirect back to the frontend
-        referer = request.headers.get("referer")
-        if referer and ("localhost" in referer or "127.0.0.1" in referer):
-            from urllib.parse import urlparse
-            p = urlparse(referer)
-            base_url = f"{p.scheme}://{p.netloc}"
-        else:
+        base_url = str(request.base_url).rstrip('/')
+        # If we are not on localhost/127.0.0.1, use the configured domain as fallback
+        if "localhost" not in base_url and "127.0.0.1" not in base_url:
             base_url = f"https://{settings.DOMAIN}"
             
         frontend_url = f"{base_url}/#token={access_token}"

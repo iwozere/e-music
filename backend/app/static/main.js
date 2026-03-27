@@ -96,13 +96,24 @@ const initApp = async () => {
     // Auth Check
     const token = localStorage.getItem('token') || (new URLSearchParams(window.location.hash.substring(1)).get('token'));
     if (token) {
+        console.log('[Auth] Token detected, verifying...');
         localStorage.setItem('token', token);
         window.history.replaceState(null, null, window.location.pathname);
-        const res = await API.checkAuth(token);
-        if (res.ok) {
-            state.user = await res.json();
-            document.getElementById('auth-modal').style.display = 'none';
+        try {
+            const res = await API.checkAuth(token);
+            if (res.ok) {
+                state.user = await res.json();
+                console.log('[Auth] Verfied as:', state.user.username);
+                document.getElementById('auth-modal').style.display = 'none';
+            } else {
+                console.warn('[Auth] Token verification failed:', res.status);
+                localStorage.removeItem('token');
+            }
+        } catch (e) {
+            console.error('[Auth] Verification error:', e);
         }
+    } else {
+        console.log('[Auth] No token found in storage or URL');
     }
 
     // Google Login

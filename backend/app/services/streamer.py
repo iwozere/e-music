@@ -3,6 +3,7 @@ import asyncio
 import typing
 from typing import AsyncGenerator, Any, Generator
 
+from fastapi import HTTPException
 from fastapi.responses import StreamingResponse, FileResponse
 from sqlmodel import Session, select
 
@@ -60,16 +61,41 @@ async def stream_youtube(track_id: str) -> StreamingResponse:
     os.makedirs(PERSISTENT_CACHE_DIR, exist_ok=True)
     os.makedirs(TEMP_CACHE_DIR, exist_ok=True)
 
+    def find_executable(name: str) -> str:
+        """Find executable in PATH or current venv."""
+        import shutil
+        import sys
+        
+        # Try finding in PATH
+        found = shutil.which(name)
+        if found:
+            return found
+            
+        # Try finding in venv Scripts/bin
+        if sys.platform == "win32":
+            venv_bin = os.path.join(os.path.dirname(sys.executable), f"{name}.exe")
+            if os.path.exists(venv_bin):
+                return venv_bin
+        else:
+            venv_bin = os.path.join(os.path.dirname(sys.executable), name)
+            if os.path.exists(venv_bin):
+                return venv_bin
+        return name # Fallback to original name (let subprocess_exec try)
+
+    # Resolve executable paths
+    yt_dlp_path = find_executable("yt-dlp")
+    ffmpeg_path = find_executable("ffmpeg")
+
     # Construct transcoding pipeline
     cmd = [
-        "yt-dlp",
+        yt_dlp_path,
         "-f", "bestaudio",
         "-o", "-", 
         f"https://www.youtube.com/watch?v={track_id}"
     ]
 
     ffmpeg_cmd = [
-        "ffmpeg",
+        ffmpeg_path,
         "-i", "pipe:0",
         "-f", "mp3",
         "-acodec", "libmp3lame",
@@ -90,8 +116,12 @@ async def stream_youtube(track_id: str) -> StreamingResponse:
             stderr=asyncio.subprocess.PIPE
         )
     except FileNotFoundError as e:
-        _logger.error("Required dependency (yt-dlp or ffmpeg) not found: %s", str(e))
-        raise
+        _logger.error("Required dependency not found! yt-dlp: %s, ffmpeg: %s. Error: %s", yt_dlp_path, ffmpeg_path, str(e))
+        # Return a simple error response instead of 500
+        raise HTTPException(status_code=503, detail="Streaming services unavailable (missing dependencies)")
+    except Exception as e:
+        _logger.exception("Subprocess execution failed")
+        raise HTTPException(status_code=500, detail=str(e))
 
     download_path = f"{temp_path}.download"
 
