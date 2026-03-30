@@ -183,12 +183,14 @@ class AudioPlayerBloc extends Bloc<AudioPlayerEvent, AudioPlayerState> {
             _loggerError('Failed to parse baseUrl for DNS warm-up: $e');
           }
 
-          final sources = event.tracks.map((track) {
-            final url = trackRepository.getStreamUrl(
-              track.remoteId ?? track.id,
-            );
+          final urlFutures = event.tracks
+              .map((t) => trackRepository.getStreamUrl(t.remoteId ?? t.id))
+              .toList();
+          final urls = await Future.wait(urlFutures);
+          final sources = List<AudioSource>.generate(event.tracks.length, (i) {
+            final track = event.tracks[i];
             return AudioSource.uri(
-              Uri.parse(url),
+              Uri.parse(urls[i]),
               tag: MediaItem(
                 id: track.remoteId ?? track.id,
                 album: 'Album',
@@ -199,7 +201,7 @@ class AudioPlayerBloc extends Bloc<AudioPlayerEvent, AudioPlayerState> {
                     : null,
               ),
             );
-          }).toList();
+          });
 
           await audioHandler.stop();
           await _audioPlayer.setAudioSources(sources, preload: false);
@@ -287,7 +289,7 @@ class AudioPlayerBloc extends Bloc<AudioPlayerEvent, AudioPlayerState> {
   }
 
   Future<void> _playTrack(Track track, Emitter<AudioPlayerState> emit) async {
-    final url = trackRepository.getStreamUrl(track.remoteId ?? track.id);
+    final url = await trackRepository.getStreamUrl(track.remoteId ?? track.id);
     try {
       final source = AudioSource.uri(
         Uri.parse(url),

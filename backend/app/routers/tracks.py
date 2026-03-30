@@ -3,13 +3,15 @@ import os
 import time
 from datetime import datetime, timezone
 from typing import List, Optional, Any
-from fastapi import APIRouter, HTTPException, Depends
-from sqlmodel import Session, select, or_, func
+from fastapi import APIRouter, HTTPException, Depends, Query, BackgroundTasks
+from sqlmodel import Session, select, or_, func, col
 
+from app.auth_utils import verify_token
 from app.models import User, Track, UserActivity
-from app.db import get_session, engine
+from app.db import get_session
 from app.dependencies import get_current_user, get_optional_user
 from app.services import streamer
+from app.services.library_import import is_under_music_path, schedule_import_cached_file
 from app.services.ytmusic import search_youtube, get_track_thumbnail, get_related_tracks
 from app.services.track_service import ensure_track_exists
 from app.utils.logger import setup_logger
@@ -18,9 +20,23 @@ _logger = setup_logger(__name__)
 
 router = APIRouter(prefix="/tracks", tags=["tracks"])
 
+
+def _user_id_from_stream_token(token: Optional[str], session: Session) -> Optional[str]:
+    """JWT from query (?token=) so <audio src> can identify logged-in users."""
+    if not token or token in ("undefined", "null", "none") or "." not in token:
+        return None
+    payload = verify_token(token)
+    if not payload:
+        return None
+    uid = payload.get("sub")
+    if not uid:
+        return None
+    user = session.get(User, uid)
+    return user.id if user else None
+
 # Internal Cache for Search
-SEARCH_CACHE = {}
-CACHE_TTL = 300 # 5 minutes
+SEARCH_CACHE: dict[str, dict[str, Any]] = {}
+CACHE_TTL = 300  # 5 minutes
 
 @router.get("/search", response_model=List[dict])
 async def search(
@@ -85,7 +101,7 @@ async def search(
 
     final_results = []
     for t in local_results:
-        d = t.dict()
+        d = t.model_dump()
         d["is_cached"] = t.is_cached
         final_results.append(d)
 
@@ -101,7 +117,7 @@ async def search(
             window_remote_ids = [item["remote_id"] for item in window if item.get("remote_id")]
             db_matches: dict = {}
             if window_remote_ids:
-                stmt = select(Track).where(Track.remote_id.in_(window_remote_ids))
+                stmt = select(Track).where(col(Track.remote_id).in_(window_remote_ids))
                 db_matches = {m.remote_id: m for m in session.exec(stmt).all()}
 
             for yt_item in window:
@@ -112,7 +128,7 @@ async def search(
                     db_track = db_matches[remote_id]
                     if db_track.id not in local_ids_in_results:
                         # Already indexed locally — use the richer DB record
-                        d = db_track.dict()
+                        d = db_track.model_dump()
                         d["is_cached"] = db_track.is_cached
                         final_results.append(d)
                         local_ids_in_results.add(db_track.id)  # prevent re-adding same track
@@ -123,8 +139,8 @@ async def search(
     # 4. Enrich with liked status
     if current_user:
         likes_stmt = select(UserActivity.track_id).where(
-            UserActivity.user_id == current_user.id, 
-            UserActivity.is_liked == True
+            UserActivity.user_id == current_user.id,
+            UserActivity.is_liked,
         )
         likes = set(session.exec(likes_stmt).all())
         for item in final_results:
@@ -146,9 +162,9 @@ async def get_popular_tracks(
     # Query tracks and sum their play counts across all users
     statement = (
         select(Track, func.sum(UserActivity.play_count).label("total_plays"))
-        .join(UserActivity, UserActivity.track_id == Track.id, isouter=True)
+        .outerjoin(UserActivity, col(UserActivity.track_id) == col(Track.id))
         .group_by(Track.id)
-        .order_by(func.sum(UserActivity.play_count).desc(), Track.added_at.desc())
+        .order_by(func.sum(UserActivity.play_count).desc(), col(Track.added_at).desc())
         .offset(offset)
         .limit(limit)
     )
@@ -159,11 +175,14 @@ async def get_popular_tracks(
     # Get user likes if logged in
     likes = set()
     if current_user:
-        likes_stmt = select(UserActivity.track_id).where(UserActivity.user_id == current_user.id, UserActivity.is_liked == True)
+        likes_stmt = select(UserActivity.track_id).where(
+            UserActivity.user_id == current_user.id,
+            UserActivity.is_liked,
+        )
         likes = set(session.exec(likes_stmt).all())
 
     for track, total_plays in results:
-        t_dict = track.dict()
+        t_dict = track.model_dump()
         t_dict["is_liked"] = t_dict["id"] in likes
         t_dict["total_plays"] = int(total_plays or 0)
         final_results.append(t_dict)
@@ -215,7 +234,7 @@ async def get_recent_tracks(
     """
     statement = (
         select(Track)
-        .order_by(Track.added_at.desc())
+        .order_by(col(Track.added_at).desc())
         .offset(offset)
         .limit(limit)
     )
@@ -224,11 +243,14 @@ async def get_recent_tracks(
     final_results = []
     likes = set()
     if current_user:
-        likes_stmt = select(UserActivity.track_id).where(UserActivity.user_id == current_user.id, UserActivity.is_liked == True)
+        likes_stmt = select(UserActivity.track_id).where(
+            UserActivity.user_id == current_user.id,
+            UserActivity.is_liked,
+        )
         likes = set(session.exec(likes_stmt).all())
 
     for track in results:
-        t_dict = track.dict()
+        t_dict = track.model_dump()
         t_dict["is_liked"] = t_dict["id"] in likes
         final_results.append(t_dict)
         
@@ -272,10 +294,11 @@ async def track_played(
         activity.last_played = datetime.now(timezone.utc)
         session.add(activity)
         
-        # Trigger persistent caching on the 3rd play
-        if activity.play_count == 3:
+        # Trigger persistent caching on the 3rd play (YouTube sources only)
+        if activity.play_count == 3 and track.remote_id:
             _logger.info("Track %s reached threshold (3 plays). Promoting to persistent cache.", track.id)
             from app.services.cache_manager import promote_track_to_cache
+
             promote_track_to_cache(track.remote_id)
     
     session.commit()
@@ -291,14 +314,14 @@ async def get_liked_tracks(
     """
     statement = select(Track).join(UserActivity).where(
         UserActivity.user_id == current_user.id,
-        UserActivity.is_liked == True
+        UserActivity.is_liked,
     )
     liked_tracks = session.exec(statement).all()
     
     results = []
     updated = False
     for t in liked_tracks:
-        track_dict = t.dict()
+        track_dict = t.model_dump()
         # Proactive Backfill: If YT track missing thumbnail, fetch it now
         if t.source_type == "youtube" and not t.thumbnail and t.remote_id:
             thumb = await get_track_thumbnail(t.remote_id)
@@ -337,13 +360,12 @@ async def get_track(
             session.commit()
             session.refresh(track)
 
-    return track.dict()
+    return track.model_dump()
 
 @router.get("/{track_id}/related")
 async def get_related(
-    track_id: str, 
+    track_id: str,
     session: Session = Depends(get_session),
-    current_user: Optional[User] = Depends(get_optional_user)
 ) -> List[dict]:
     """
     Radio Mode: Fetch related tracks based on a track ID.
@@ -351,16 +373,23 @@ async def get_related(
     _logger.info("Radio Mode requested for track: %s", track_id)
     statement = select(Track).where(or_(Track.id == track_id, Track.remote_id == track_id))
     track = session.exec(statement).first()
-    remote_id = track.remote_id if track else track_id
-    
-    related = await get_related_tracks(remote_id)
+    remote_key: str = track.remote_id if track and track.remote_id else track_id
+
+    related = await get_related_tracks(remote_key)
     return related
 
 @router.get("/stream/{track_id}")
-async def stream_track(track_id: str, session: Session = Depends(get_session)) -> Any:
+async def stream_track(
+    track_id: str,
+    background_tasks: BackgroundTasks,
+    session: Session = Depends(get_session),
+    token: Optional[str] = Query(None),
+) -> Any:
     """
     Stream a track's audio data with robust cache validation and fallback.
+    Optional query param `token` (JWT) ties the download to a logged-in user for library import.
     """
+    library_uid = _user_id_from_stream_token(token, session)
     _logger.info("Streaming request for: %s", track_id)
     statement = select(Track).where(or_(Track.id == track_id, Track.remote_id == track_id))
     track = session.exec(statement).first()
@@ -372,6 +401,18 @@ async def stream_track(track_id: str, session: Session = Depends(get_session)) -
             # Basic sanity check: an audio file should be > 100KB unless it's a very short sound
             if file_size > 100 * 1024:
                 _logger.info("Streaming from local cache: %s (%s bytes)", track.local_path, file_size)
+                if (
+                    library_uid
+                    and track.source_type == "youtube"
+                    and track.remote_id
+                    and not is_under_music_path(track.local_path)
+                ):
+                    background_tasks.add_task(
+                        schedule_import_cached_file,
+                        library_uid,
+                        track.remote_id,
+                        track.local_path,
+                    )
                 return streamer.get_local_stream(track.local_path)
             else:
                 _logger.warning("Cache file %s is suspiciously small (%d bytes). Invaliding.", track.local_path, file_size)
@@ -389,5 +430,13 @@ async def stream_track(track_id: str, session: Session = Depends(get_session)) -
             session.commit()
             # Proceed to stream_youtube fallback
     
-    _logger.info("Streaming from YouTube: %s", track.remote_id if track else track_id)
-    return await streamer.stream_youtube(track.remote_id if track else track_id)
+    remote_key: str = (track.remote_id or track_id) if track else track_id
+    _logger.info("Streaming from YouTube: %s", remote_key)
+    # Only trust on-disk {remote_id}.mp3 when DB says cached; else avoid 416
+    # from truncated orphans while still marked not cached in the UI.
+    allow_disk = track.is_cached if track else True
+    return await streamer.stream_youtube(
+        remote_key,
+        allow_disk_cache=allow_disk,
+        library_user_id=library_uid,
+    )

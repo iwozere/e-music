@@ -23,8 +23,15 @@ class TrackRepository {
     return [];
   }
 
-  String getStreamUrl(String trackId) {
-    return '${apiClient.baseUrl}/stream/$trackId';
+  /// Stream URLs cannot send Authorization headers; append JWT like the web player.
+  Future<String> getStreamUrl(String trackId) async {
+    var url = '${apiClient.baseUrl}/stream/$trackId';
+    final token = await apiClient.getToken();
+    if (token != null && token.isNotEmpty) {
+      url += url.contains('?') ? '&' : '?';
+      url += 'token=${Uri.encodeQueryComponent(token)}';
+    }
+    return url;
   }
 
   Future<void> likeTrack(String trackId, {bool isLiked = true}) async {

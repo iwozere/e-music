@@ -104,7 +104,11 @@ window.playTrack = async (trackId, title, artist, thumbnail) => {
     }
 
     if (audio) {
-        const streamUrl = `${CONFIG.apiBase}/tracks/stream/${trackId}`;
+        let streamUrl = `${CONFIG.apiBase}/tracks/stream/${trackId}`;
+        const token = localStorage.getItem('token');
+        if (token) {
+            streamUrl += `?token=${encodeURIComponent(token)}`;
+        }
         console.log("[Player] Setting audio source:", streamUrl);
         audio.src = streamUrl;
         try {

@@ -10,7 +10,7 @@ import sys
 import shutil
 import subprocess
 import threading
-from typing import Dict, Generator
+from typing import Dict, Generator, Optional, Union
 
 from fastapi import HTTPException
 from fastapi.responses import StreamingResponse, FileResponse
@@ -20,6 +20,7 @@ from app.models import Track
 from app.db import engine
 from app.config import settings
 from app.utils.logger import setup_logger
+from app.services import library_import
 
 _logger = setup_logger(__name__)
 
@@ -61,23 +62,34 @@ def validate_cache_file(path: str, min_size: int = 100 * 1024) -> bool:
     return True
 
 
-async def stream_youtube(track_id: str) -> StreamingResponse:
+async def stream_youtube(
+    track_id: str,
+    *,
+    allow_disk_cache: bool = True,
+    library_user_id: Optional[str] = None,
+) -> Union[StreamingResponse, FileResponse]:
     """
     Stream audio from YouTube using yt-dlp → ffmpeg pipeline.
     Returns a StreamingResponse backed by a synchronous generator so it is
     compatible with Windows SelectorEventLoop and Linux EpollEventLoop.
-    """
-    # 1. Serve from persistent cache
-    persistent_path = os.path.join(PERSISTENT_CACHE_DIR, f"{track_id}.mp3")
-    if validate_cache_file(persistent_path):
-        _logger.info("Serving from healthy persistent cache: %s", track_id)
-        return get_local_stream(persistent_path)
 
-    # 2. Serve from temp cache
+    If allow_disk_cache is False, skip temp/persistent .mp3 shortcuts so we do
+    not serve stale or truncated files when the DB says the track is not
+    cached (those still trigger HTTP 416 on Range requests from <audio>).
+    """
+    persistent_path = os.path.join(PERSISTENT_CACHE_DIR, f"{track_id}.mp3")
     temp_path = os.path.join(TEMP_CACHE_DIR, f"{track_id}.mp3")
-    if validate_cache_file(temp_path):
-        _logger.info("Serving from healthy temp cache: %s", track_id)
-        return get_local_stream(temp_path)
+
+    if allow_disk_cache:
+        # 1. Serve from persistent cache
+        if validate_cache_file(persistent_path):
+            _logger.info("Serving from healthy persistent cache: %s", track_id)
+            return get_local_stream(persistent_path)
+
+        # 2. Serve from temp cache
+        if validate_cache_file(temp_path):
+            _logger.info("Serving from healthy temp cache: %s", track_id)
+            return get_local_stream(temp_path)
 
     # 3. Wait if a download for this track_id is already running
     with _active_downloads_lock:
@@ -162,9 +174,14 @@ async def stream_youtube(track_id: str) -> StreamingResponse:
             if yt_proc.stdout:
                 yt_proc.stdout.close()
 
+            ff_out = ff_proc.stdout
+            if ff_out is None:
+                _logger.error("ffmpeg stdout not available for %s", track_id)
+                return
+
             with open(download_path, "wb") as cache_file:
                 while True:
-                    chunk = ff_proc.stdout.read(16 * 1024)
+                    chunk = ff_out.read(16 * 1024)
                     if not chunk:
                         break
                     cache_file.write(chunk)
@@ -175,11 +192,17 @@ async def stream_youtube(track_id: str) -> StreamingResponse:
             ff_proc.wait()
 
             if yt_proc.returncode != 0:
-                err = (yt_proc.stderr.read() or b"").decode(errors="replace").strip()
+                err = (
+                    (yt_proc.stderr.read() if yt_proc.stderr else b"")
+                    or b""
+                ).decode(errors="replace").strip()
                 _logger.error("yt-dlp exited %d: %s", yt_proc.returncode, err)
                 return
             if ff_proc.returncode != 0:
-                err = (ff_proc.stderr.read() or b"").decode(errors="replace").strip()
+                err = (
+                    (ff_proc.stderr.read() if ff_proc.stderr else b"")
+                    or b""
+                ).decode(errors="replace").strip()
                 _logger.error("ffmpeg exited %d: %s", ff_proc.returncode, err)
                 return
 
@@ -227,8 +250,24 @@ async def stream_youtube(track_id: str) -> StreamingResponse:
                             session.commit()
                 except Exception:
                     _logger.exception("Failed to update DB for %s", track_id)
+                if library_user_id:
+                    try:
+                        library_import.try_import_youtube_to_library(
+                            user_id=library_user_id,
+                            remote_id=track_id,
+                            source_mp3_path=temp_path,
+                        )
+                    except Exception:
+                        _logger.exception("Library import after stream failed for %s", track_id)
 
-    return StreamingResponse(_stream_sync(), media_type="audio/mpeg")
+    return StreamingResponse(
+        _stream_sync(),
+        media_type="audio/mpeg",
+        headers={
+            "Accept-Ranges": "none",
+            "Cache-Control": "no-store",
+        },
+    )
 
 
 def get_local_stream(file_path: str) -> FileResponse:
