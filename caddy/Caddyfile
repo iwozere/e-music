@@ -4,6 +4,11 @@
 }
 
 # Web Dashboard & API
+# Tunnel terminates TLS at Cloudflare; upstream hop is HTTP. Tell the app the client used HTTPS
+# so signed stream URLs and api_base_url use https:// (avoids mixed-content on <audio src>).
 http://e-music.win, http://api.e-music.win {
-    reverse_proxy backend:8000
+    reverse_proxy backend:8000 {
+        header_up X-Forwarded-Proto https
+        header_up X-Forwarded-Host {host}
+    }
 }
