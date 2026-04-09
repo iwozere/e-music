@@ -79,6 +79,21 @@ Run these from the project root where `docker-compose.yml` lives (for example `/
   `docker compose build --pull backend`  
   `docker compose up -d backend`
 
+- **After changing web UI files** (`backend/app/static/*.js`, `index.html`, `style.css`, etc.):  
+  Those assets are **baked into the backend image** at build time (see `backend/Dockerfile`). **Restarting the Pi or container alone is not enough** if the image still contains old files.
+
+  1. Bump the `?v=…` query strings in `backend/app/static/index.html` whenever you change static assets so browsers do not keep an old cached `main.js` / `ui.js`.
+  2. Rebuild and recreate the backend container:
+     ```bash
+     docker compose build --pull backend
+     docker compose up -d --force-recreate backend
+     ```
+  3. **Verify** the running image serves the new bundle (example: search for a string you added, or the current app version in `main.js`):
+     ```bash
+     docker compose exec backend grep -n paginatedViews /app/app/static/main.js
+     ```
+     (Adjust `/app/app/static` if your image layout differs; use `docker compose exec backend sh` and `find` if unsure.)
+
 - **Stop:**  
   `docker compose stop`
 
