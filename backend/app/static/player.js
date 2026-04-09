@@ -70,6 +70,19 @@ const PLAYER = {
 
 window.PLAYER = PLAYER;
 
+/** Grant URLs must be https when the app runs on https (mixed content blocks <audio src=http>). */
+function coerceStreamUrlToPageHttps(url) {
+    if (!url || typeof url !== 'string' || window.location.protocol !== 'https:') return url;
+    try {
+        const u = new URL(url, window.location.href);
+        if (u.protocol === 'http:') {
+            u.protocol = 'https:';
+            return u.href;
+        }
+    } catch (_) { /* ignore */ }
+    return url;
+}
+
 window.playTrack = async (trackId, title, artist, thumbnail) => {
     state.currentTrack = { id: trackId, title, artist, thumbnail };
     state.isPlaying = true;
@@ -138,7 +151,15 @@ window.playTrack = async (trackId, title, artist, thumbnail) => {
             return;
         }
         const grantJson = await grantRes.json();
-        const streamUrl = grantJson.stream_url;
+        let streamUrl = grantJson.stream_url;
+        if (!streamUrl) {
+            console.warn('[Player] stream/grant returned no stream_url');
+            if (typeof UI !== 'undefined' && UI.showToast) UI.showToast('Could not get playback URL');
+            state.isPlaying = false;
+            UI.initIcons();
+            return;
+        }
+        streamUrl = coerceStreamUrlToPageHttps(streamUrl);
         console.log("[Player] Setting audio source (signed URL)");
         audio.src = streamUrl;
         try {
@@ -146,7 +167,11 @@ window.playTrack = async (trackId, title, artist, thumbnail) => {
             if (playBtn) playBtn.innerHTML = '<i data-lucide="pause"></i>';
             PLAYER.updateMediaSession(state.currentTrack);
         } catch (err) {
-            console.warn("[Player] Playback failed:", err.message);
+            const code = audio.error ? audio.error.code : '';
+            console.warn("[Player] Playback failed:", err.message, 'mediaError=', code);
+            if (typeof UI !== 'undefined' && UI.showToast) {
+                UI.showToast('Playback failed — try another track or check server logs');
+            }
             state.isPlaying = false;
         }
     }
@@ -199,7 +224,7 @@ window.playAll = () => {
     }
 };
 
-window.playRandom = () => {
+window.playRandom = async () => {
     if (state.currentTracksContext.length > 0) {
         state.queue = [];
         // Fisher-Yates Shuffle
@@ -210,8 +235,8 @@ window.playRandom = () => {
         }
         state.currentTracksContext = shuffled;
         const first = shuffled[0];
-        playTrack(first.id || first.remote_id, first.title, first.artist, first.thumbnail);
         UI.showToast("Shuffling playback");
+        await playTrack(first.id || first.remote_id, first.title, first.artist, first.thumbnail);
     }
 };
 
