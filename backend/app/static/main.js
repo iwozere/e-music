@@ -1,5 +1,5 @@
 // main.js - Entry Point
-console.log("MySpotify v2.9.1 - Refactored");
+console.log("MySpotify v2.9.11 - Refactored");
 
 const state = {
     user: null,
@@ -22,14 +22,6 @@ const state = {
 };
 
 // --- Core Logic ---
-const debounce = (func, delay) => {
-    let timeout;
-    return (...args) => {
-        clearTimeout(timeout);
-        timeout = setTimeout(() => func(...args), delay);
-    };
-};
-
 const performSearch = async (query, append = false) => {
     // Cancel any ongoing search request
     if (state.searchAbortController) {
@@ -44,7 +36,11 @@ const performSearch = async (query, append = false) => {
         state.searchMeta.offset = 0;
         state.searchMeta.hasMore = true;
         state.searchMeta.query = query;
-        if (state.currentView !== 'home' || query !== '') state.currentView = 'search';
+        // Only enter "search" mode when there is a query; keep liked/playlist/library/recent
+        // intact so headers (Play All, etc.) are not lost to a stale debounced search.
+        if (query !== '') {
+            state.currentView = 'search';
+        }
     }
 
     state.searchMeta.isFetching = true;
@@ -91,7 +87,19 @@ const performSearch = async (query, append = false) => {
     }
 };
 
-const debouncedSearch = debounce((q) => performSearch(q), 500);
+let searchDebounceTimer = null;
+const debouncedSearch = (q) => {
+    clearTimeout(searchDebounceTimer);
+    searchDebounceTimer = setTimeout(() => {
+        searchDebounceTimer = null;
+        performSearch(q);
+    }, 500);
+};
+
+const cancelPendingSearchDebounce = () => {
+    clearTimeout(searchDebounceTimer);
+    searchDebounceTimer = null;
+};
 
 // --- Initialization ---
 const initApp = async () => {
@@ -212,7 +220,12 @@ const initEventListeners = () => {
             document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
             item.classList.add('active');
 
-            // Clear search on any navigation
+            // Clear search on any navigation (and drop stale debounced performSearch)
+            cancelPendingSearchDebounce();
+            if (state.searchAbortController) {
+                state.searchAbortController.abort();
+                state.searchAbortController = null;
+            }
             if (searchInput) {
                 searchInput.value = '';
                 if (clearBtn) clearBtn.classList.remove('visible');
@@ -313,6 +326,7 @@ window.loadLikedSongs = async () => {
         }
         if (res.ok) {
             const tracks = await res.json();
+            state.currentView = 'liked';
             UI.renderTracks(tracks, "Liked Songs");
         }
     } catch (err) {
@@ -321,6 +335,11 @@ window.loadLikedSongs = async () => {
 };
 
 window.loadPlaylist = async (playlistId, name = "Playlist") => {
+    cancelPendingSearchDebounce();
+    if (state.searchAbortController) {
+        state.searchAbortController.abort();
+        state.searchAbortController = null;
+    }
     state.currentView = 'playlist';
     state.currentPlaylistId = playlistId;
     state.searchMeta.hasMore = false;
@@ -334,6 +353,7 @@ window.loadPlaylist = async (playlistId, name = "Playlist") => {
         }
         if (res.ok) {
             const tracks = await res.json();
+            state.currentView = 'playlist';
             UI.renderTracks(tracks, name);
         }
     } catch (err) {
