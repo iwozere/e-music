@@ -52,7 +52,8 @@ const UI = {
                     viewTitle.style.display = 'block';
                     viewTitle.innerText = title;
                 }
-            } else {
+            } else if (!append) {
+                // When appending pages, title is intentionally null — keep the existing header.
                 viewTitle.style.display = 'none';
             }
         }

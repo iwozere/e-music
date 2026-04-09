@@ -294,6 +294,12 @@ window.loadRecentSongs = async () => {
 };
 
 window.loadMore = async () => {
+    // Liked / playlist / library load full lists in one shot — do not paginate or the
+    // append path calls renderTracks(..., null, true) which hides the view header (Play All, etc.).
+    const paginatedViews = ['home', 'recent', 'search'];
+    if (!paginatedViews.includes(state.currentView)) {
+        return;
+    }
     if (state.searchMeta.query) {
         return performSearch(state.searchMeta.query, true);
     } else {
@@ -308,6 +314,7 @@ window.loadHomeTracks = async (append = false) => {
 window.loadLikedSongs = async () => {
     state.currentView = 'liked';
     state.currentPlaylistId = null;
+    state.searchMeta.hasMore = false;
     try {
         const res = await API.getLiked();
         if (res.status === 401) {
@@ -446,7 +453,15 @@ window.toggleLike = async (trackId, el) => {
         }
         if (res.ok) {
             if (isLiked) state.likedTrackIds.delete(trackId); else state.likedTrackIds.add(trackId);
-            if (el) UI.renderTracks(state.currentTracksContext, null, false);
+            if (el) {
+                let headerTitle = null;
+                if (state.currentView === 'liked') headerTitle = 'Liked Songs';
+                else if (state.currentView === 'playlist') {
+                    const nameSpan = document.querySelector('#content-view h1 > span');
+                    headerTitle = nameSpan ? nameSpan.textContent.trim() : null;
+                }
+                UI.renderTracks(state.currentTracksContext, headerTitle, false);
+            }
         }
     } catch (err) {
         console.error("Toggle like failed:", err);
