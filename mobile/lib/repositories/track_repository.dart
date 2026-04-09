@@ -13,7 +13,7 @@ class TrackRepository {
     int limit = 20,
   }) async {
     final response = await apiClient.get(
-      '/search?q=$query&offset=$offset&limit=$limit',
+      '/tracks/search?q=${Uri.encodeQueryComponent(query)}&offset=$offset&limit=$limit',
     );
 
     if (response.statusCode == 200) {
@@ -23,13 +23,19 @@ class TrackRepository {
     return [];
   }
 
-  /// Stream URLs cannot send Authorization headers; append JWT like the web player.
+  /// Signed stream URL from POST /tracks/stream/grant (short-lived).
   Future<String> getStreamUrl(String trackId) async {
-    var url = '${apiClient.baseUrl}/stream/$trackId';
-    final token = await apiClient.getToken();
-    if (token != null && token.isNotEmpty) {
-      url += url.contains('?') ? '&' : '?';
-      url += 'token=${Uri.encodeQueryComponent(token)}';
+    final response = await apiClient.post(
+      '/tracks/stream/grant',
+      body: {'track_id': trackId},
+    );
+    if (response.statusCode != 200) {
+      throw Exception('stream grant failed: HTTP ${response.statusCode}');
+    }
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    final url = data['stream_url'] as String?;
+    if (url == null || url.isEmpty) {
+      throw Exception('missing stream_url in grant response');
     }
     return url;
   }

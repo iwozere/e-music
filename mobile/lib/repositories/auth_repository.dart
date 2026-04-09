@@ -47,10 +47,14 @@ class AuthRepository {
       );
 
       if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        final token = data['access_token'];
-
-        await apiClient.saveToken(token);
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        final token = data['access_token'] as String?;
+        final refresh = data['refresh_token'] as String?;
+        if (token != null && refresh != null) {
+          await apiClient.saveTokenPair(token, refresh);
+        } else if (token != null) {
+          await apiClient.saveToken(token);
+        }
         return await getCurrentUser();
       }
       return null;
@@ -74,12 +78,17 @@ class AuthRepository {
       );
 
       if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        final token = data['access_token'];
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        final token = data['access_token'] as String?;
+        final refresh = data['refresh_token'] as String?;
         final userData = data['user'];
 
-        await apiClient.saveToken(token);
-        return User.fromJson(userData);
+        if (token != null && refresh != null) {
+          await apiClient.saveTokenPair(token, refresh);
+        } else if (token != null) {
+          await apiClient.saveToken(token);
+        }
+        return User.fromJson(userData as Map<String, dynamic>);
       }
       return null;
     } catch (e) {
@@ -88,7 +97,18 @@ class AuthRepository {
   }
 
   Future<void> signOut() async {
+    final refresh = await apiClient.getRefreshToken();
     await _googleSignIn.signOut();
+    if (refresh != null && refresh.isNotEmpty) {
+      try {
+        await apiClient.post(
+          '/auth/logout',
+          body: {'refresh_token': refresh},
+          authenticated: false,
+          retryOn401: false,
+        );
+      } catch (_) {}
+    }
     await apiClient.deleteToken();
   }
 

@@ -2,18 +2,22 @@ import asyncio
 import os
 import time
 from datetime import datetime, timezone
-from typing import List, Optional, Any
-from fastapi import APIRouter, HTTPException, Depends, Query, BackgroundTasks
-from sqlmodel import Session, select, or_, func, col
+from typing import Any, List, Optional
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
+from sqlmodel import Session, col, func, or_, select
 
-from app.auth_utils import verify_token
-from app.models import User, Track, UserActivity
+from app.auth_utils import sign_stream_url, verify_stream_params
+from app.config import settings
 from app.db import get_session
+from app.public_api import api_v1_base_url
 from app.dependencies import get_current_user, get_optional_user
+from app.limiter_ext import limiter
+from app.models import Track, User, UserActivity
+from app.schemas import StreamGrantBody
 from app.services import streamer
 from app.services.library_import import is_under_music_path, schedule_import_cached_file
-from app.services.ytmusic import search_youtube, get_track_thumbnail, get_related_tracks
 from app.services.track_service import ensure_track_exists
+from app.services.ytmusic import get_related_tracks, get_track_thumbnail, search_youtube
 from app.utils.logger import setup_logger
 
 _logger = setup_logger(__name__)
@@ -21,25 +25,20 @@ _logger = setup_logger(__name__)
 router = APIRouter(prefix="/tracks", tags=["tracks"])
 
 
-def _user_id_from_stream_token(token: Optional[str], session: Session) -> Optional[str]:
-    """JWT from query (?token=) so <audio src> can identify logged-in users."""
-    if not token or token in ("undefined", "null", "none") or "." not in token:
-        return None
-    payload = verify_token(token)
-    if not payload:
-        return None
-    uid = payload.get("sub")
-    if not uid:
-        return None
-    user = session.get(User, uid)
-    return user.id if user else None
+def _valid_stream_track_id(tid: str) -> bool:
+    if not tid or len(tid) > 128:
+        return False
+    return all(c.isalnum() or c in "-_" for c in tid)
+
 
 # Internal Cache for Search
 SEARCH_CACHE: dict[str, dict[str, Any]] = {}
 CACHE_TTL = 300  # 5 minutes
 
 @router.get("/search", response_model=List[dict])
+@limiter.limit("90/minute")
 async def search(
+    request: Request,
     q: str, 
     offset: int = 0,
     limit: int = 20,
@@ -338,62 +337,66 @@ async def get_liked_tracks(
         
     return results
 
-@router.get("/{track_id}")
-async def get_track(
-    track_id: str, 
-    session: Session = Depends(get_session)
+
+@router.post("/stream/grant")
+@limiter.limit("120/minute")
+async def grant_stream_url(
+    request: Request,
+    body: StreamGrantBody,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
 ) -> dict:
     """
-    Fetch metadata for a single track by ID (internal or remote).
+    Issue a short-lived signed URL for /tracks/stream/{track_id} (no JWT in query).
     """
-    statement = select(Track).where(or_(Track.id == track_id, Track.remote_id == track_id))
-    track = session.exec(statement).first()
-    
-    if not track:
+    tid = body.track_id.strip()
+    if not _valid_stream_track_id(tid):
+        raise HTTPException(status_code=400, detail="Invalid track_id")
+    statement = select(Track).where(or_(Track.id == tid, Track.remote_id == tid))
+    if not session.exec(statement).first():
         raise HTTPException(status_code=404, detail="Track not found")
-    
-    if track.source_type == "youtube" and not track.thumbnail and track.remote_id:
-        thumb = await get_track_thumbnail(track.remote_id)
-        if thumb:
-            track.thumbnail = thumb
-            session.add(track)
-            session.commit()
-            session.refresh(track)
+    exp = int(time.time()) + settings.STREAM_URL_TTL_SECONDS
+    sig = sign_stream_url(tid, exp, current_user.id)
+    base = api_v1_base_url(request)
+    from urllib.parse import quote
 
-    return track.model_dump()
+    stream_url = f"{base}/tracks/stream/{tid}?exp={exp}&sig={sig}&uid={quote(current_user.id, safe='')}"
+    return {
+        "stream_url": stream_url,
+        "expires_at": datetime.fromtimestamp(exp, tz=timezone.utc).isoformat(),
+    }
 
-@router.get("/{track_id}/related")
-async def get_related(
-    track_id: str,
-    session: Session = Depends(get_session),
-) -> List[dict]:
-    """
-    Radio Mode: Fetch related tracks based on a track ID.
-    """
-    _logger.info("Radio Mode requested for track: %s", track_id)
-    statement = select(Track).where(or_(Track.id == track_id, Track.remote_id == track_id))
-    track = session.exec(statement).first()
-    remote_key: str = track.remote_id if track and track.remote_id else track_id
-
-    related = await get_related_tracks(remote_key)
-    return related
 
 @router.get("/stream/{track_id}")
+@limiter.limit("200/minute")
 async def stream_track(
+    request: Request,
     track_id: str,
     background_tasks: BackgroundTasks,
     session: Session = Depends(get_session),
-    token: Optional[str] = Query(None),
+    exp: Optional[int] = Query(None),
+    sig: Optional[str] = Query(None),
+    uid: Optional[str] = Query(None),
 ) -> Any:
     """
-    Stream a track's audio data with robust cache validation and fallback.
-    Optional query param `token` (JWT) ties the download to a logged-in user for library import.
+    Stream a track's audio data. Requires a short-lived signed URL from POST /tracks/stream/grant.
     """
-    library_uid = _user_id_from_stream_token(token, session)
+    if exp is None or not sig or not uid:
+        raise HTTPException(
+            status_code=401,
+            detail="Valid stream credentials required; obtain a signed URL via POST .../tracks/stream/grant",
+        )
+    if not _valid_stream_track_id(track_id):
+        raise HTTPException(status_code=400, detail="Invalid track_id")
+    if not verify_stream_params(track_id, exp, uid, sig):
+        raise HTTPException(status_code=403, detail="Invalid or expired stream link")
+    if not session.get(User, uid):
+        raise HTTPException(status_code=403, detail="Invalid stream subject")
+    library_uid = uid
     _logger.info("Streaming request for: %s", track_id)
     statement = select(Track).where(or_(Track.id == track_id, Track.remote_id == track_id))
     track = session.exec(statement).first()
-    
+
     # Check cache validity (min 100KB for audio)
     if track and track.is_cached and track.local_path:
         if os.path.exists(track.local_path):
@@ -429,7 +432,7 @@ async def stream_track(
             session.add(track)
             session.commit()
             # Proceed to stream_youtube fallback
-    
+
     remote_key: str = (track.remote_id or track_id) if track else track_id
     _logger.info("Streaming from YouTube: %s", remote_key)
     # Only trust on-disk {remote_id}.mp3 when DB says cached; else avoid 416
@@ -440,3 +443,46 @@ async def stream_track(
         allow_disk_cache=allow_disk,
         library_user_id=library_uid,
     )
+
+
+@router.get("/{track_id}")
+# Intentionally no rate limit (metadata fetches are lightweight; search is limited).
+async def get_track(
+    track_id: str,
+    session: Session = Depends(get_session)
+) -> dict:
+    """
+    Fetch metadata for a single track by ID (internal or remote).
+    """
+    statement = select(Track).where(or_(Track.id == track_id, Track.remote_id == track_id))
+    track = session.exec(statement).first()
+
+    if not track:
+        raise HTTPException(status_code=404, detail="Track not found")
+
+    if track.source_type == "youtube" and not track.thumbnail and track.remote_id:
+        thumb = await get_track_thumbnail(track.remote_id)
+        if thumb:
+            track.thumbnail = thumb
+            session.add(track)
+            session.commit()
+            session.refresh(track)
+
+    return track.model_dump()
+
+
+@router.get("/{track_id}/related")
+async def get_related(
+    track_id: str,
+    session: Session = Depends(get_session),
+) -> List[dict]:
+    """
+    Radio Mode: Fetch related tracks based on a track ID.
+    """
+    _logger.info("Radio Mode requested for track: %s", track_id)
+    statement = select(Track).where(or_(Track.id == track_id, Track.remote_id == track_id))
+    track = session.exec(statement).first()
+    remote_key: str = track.remote_id if track and track.remote_id else track_id
+
+    related = await get_related_tracks(remote_key)
+    return related

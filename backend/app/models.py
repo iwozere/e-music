@@ -2,6 +2,20 @@ from datetime import datetime, timezone
 from typing import Optional, List
 from sqlmodel import SQLModel, Field, Relationship
 
+class RefreshToken(SQLModel, table=True):
+    """
+    Opaque refresh tokens (hashed at rest).
+    """
+
+    id: str = Field(primary_key=True)
+    user_id: str = Field(foreign_key="user.id", index=True)
+    token_hash: str = Field(unique=True, index=True)
+    expires_at: datetime
+    created_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc)
+    )
+
+
 class User(SQLModel, table=True):
     """
     User account model for both Google and password-based authentication.

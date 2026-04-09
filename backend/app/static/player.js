@@ -104,12 +104,42 @@ window.playTrack = async (trackId, title, artist, thumbnail) => {
     }
 
     if (audio) {
-        let streamUrl = `${CONFIG.apiBase}/tracks/stream/${trackId}`;
         const token = localStorage.getItem('token');
-        if (token) {
-            streamUrl += `?token=${encodeURIComponent(token)}`;
+        if (!token) {
+            if (typeof UI !== 'undefined' && UI.showToast) {
+                UI.showToast('Log in to play music');
+            }
+            state.isPlaying = false;
+            UI.initIcons();
+            return;
         }
-        console.log("[Player] Setting audio source:", streamUrl);
+        const grantRes = await fetch(`${CONFIG.apiBase}/tracks/stream/grant`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ track_id: trackId }),
+        });
+        if (grantRes.status === 401) {
+            localStorage.removeItem('token');
+            localStorage.removeItem('refresh_token');
+            if (typeof UI !== 'undefined' && UI.showToast) {
+                UI.showToast('Session expired; please log in again');
+            }
+            state.isPlaying = false;
+            UI.initIcons();
+            return;
+        }
+        if (!grantRes.ok) {
+            console.warn('[Player] stream/grant failed:', grantRes.status);
+            state.isPlaying = false;
+            UI.initIcons();
+            return;
+        }
+        const grantJson = await grantRes.json();
+        const streamUrl = grantJson.stream_url;
+        console.log("[Player] Setting audio source (signed URL)");
         audio.src = streamUrl;
         try {
             await audio.play();

@@ -96,7 +96,14 @@ const debouncedSearch = debounce((q) => performSearch(q), 500);
 // --- Initialization ---
 const initApp = async () => {
     // Auth Check
-    const token = localStorage.getItem('token') || (new URLSearchParams(window.location.hash.substring(1)).get('token'));
+    const hashPart = window.location.hash.startsWith('#') ? window.location.hash.substring(1) : '';
+    const hashParams = new URLSearchParams(hashPart);
+    const accessFromHash = hashParams.get('access_token') || hashParams.get('token');
+    const refreshFromHash = hashParams.get('refresh_token');
+    const token = localStorage.getItem('token') || accessFromHash;
+    if (refreshFromHash) {
+        localStorage.setItem('refresh_token', refreshFromHash);
+    }
     if (token) {
         console.log('[Auth] Token detected, verifying...');
         localStorage.setItem('token', token);
@@ -110,6 +117,7 @@ const initApp = async () => {
             } else {
                 console.warn('[Auth] Token verification failed:', res.status);
                 localStorage.removeItem('token');
+                localStorage.removeItem('refresh_token');
             }
         } catch (e) {
             console.error('[Auth] Verification error:', e);
@@ -131,7 +139,7 @@ const initApp = async () => {
     // Fetch system configuration (Google Client ID, etc.)
     try {
         console.log('[App] Fetching system config...');
-        const configRes = await API.getSystemConfig();
+        const configRes = await API.getPublicConfig();
         if (configRes.ok) {
             const sysConfig = await configRes.json();
             CONFIG.googleClientId = sysConfig.google_client_id;

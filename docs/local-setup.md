@@ -55,15 +55,72 @@ Open your browser and navigate to:
 - **API Health**: [http://localhost:8000/health](http://localhost:8000/health)
 - **API Docs**: [http://localhost:8000/docs](http://localhost:8000/docs) (Swagger UI)
 
-## 6. Google Auth Troubleshooting
+## 6. Google Cloud Console — OAuth configuration
 
-If you see "Zugriff blockiert" (Access Blocked) or "Invalid Request" when logging in locally, you must whitelist your local environment in the [Google Cloud Console](https://console.cloud.google.com/apis/credentials):
+Use this checklist whenever you see **`redirect_uri_mismatch`**, **`Access blocked`**, or sign-in works on one device/URL but not another.
 
-1.  **Authorized JavaScript origins**:
-    - `http://localhost:8000`
-    - `http://localhost:3000` (if using a separate frontend)
-2.  **Authorized redirect URIs**:
-    - `http://localhost:8000/auth/google/login`
+### Where to go in Google Cloud
 
-> [!IMPORTANT]
-> Google can take up to 5 minutes to propagate these changes. If it doesn't work immediately after saving, wait a few minutes and try again.
+1. Open [Google Cloud Console](https://console.cloud.google.com/).
+2. Select the **project** that owns your OAuth clients.
+3. Menu: **APIs & Services** → **Credentials**.
+4. Under **OAuth 2.0 Client IDs**, open the **Web application** client whose **Client ID** matches `GOOGLE_CLIENT_ID` in your `.env` (not the Android client).
+
+If you have no Web client yet: **Create credentials** → **OAuth client ID** → Application type **Web application**.
+
+**Also ensure** **OAuth consent screen** is configured (Testing / Production and test users if needed).
+
+### How this app uses Google (two ideas to keep separate)
+
+| Mechanism | Where it’s used | Redirect / callback URL |
+|-----------|------------------|-------------------------|
+| **Google Identity Services (GIS)** — “Sign in with Google” button, `ux_mode: redirect` | Browser loads `login_uri` from the **same origin as the page** | **`{origin}/auth/google/login`** e.g. `https://e-music.win/auth/google/login` |
+| **Authorization code flow** (optional; `/auth/login` URL builder) | Server uses `GOOGLE_REDIRECT_URI` from `.env` | Whatever you set in `.env`, often **`https://api…/auth/callback`** |
+
+The **GIS** button always sends users back to **`window.location.origin` + `/auth/google/login`**. So **every hostname you use to open the UI** needs matching Console entries (see below).
+
+### Authorized JavaScript origins
+
+**Path:** same Credentials screen → **Authorised JavaScript origins** → **Add URI**.
+
+Add **one entry per origin** (scheme + host + port only — **no** path, **no** trailing slash):
+
+Examples you may need:
+
+- Local dev (FastAPI serves the UI): `http://localhost:8000`
+- Phone / another PC on LAN: `http://192.168.x.x:8000` (use your real IP and port)
+- Public site (UI): `https://e-music.win`
+- If you sometimes open the UI on the API host: `https://api.e-music.win`
+
+### Authorized redirect URIs
+
+**Path:** **Authorised redirect URIs** → **Add URI**.
+
+Add **full URLs including path**. For GIS sign-in you **must** include, for **each** JavaScript origin you use:
+
+- `{that_origin}/auth/google/login`
+
+Examples:
+
+- `http://localhost:8000/auth/google/login`
+- `http://192.168.x.x:8000/auth/google/login`
+- `https://e-music.win/auth/google/login`
+- `https://api.e-music.win/auth/google/login` *(only if users actually load the app from `api.…`)*
+
+For the **code flow** (if you use `/auth/callback` and `GOOGLE_REDIRECT_URI` in `.env`), also add the exact URIs you configure there, e.g.:
+
+- `http://localhost:8000/auth/callback`
+- `https://api.e-music.win/auth/callback`
+
+### Common mistake: `e-music.win` vs `api.e-music.win`
+
+If the browser address bar is **`https://e-music.win`**, GIS uses **`https://e-music.win/auth/google/login`**.  
+Listing only **`https://api.e-music.win/auth/google/login`** is **not** enough — Google will return **`redirect_uri_mismatch`**.
+
+### After saving
+
+Click **Save**. Changes can take a few minutes to apply.
+
+### Android app
+
+The **Android** OAuth client (`GOOGLE_CLIENT_ID_ANDROID`, etc.) is configured separately (package name + SHA-1). Do **not** put LAN URLs there; use the **Web** client for the browser-based sign-in described above.

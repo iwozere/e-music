@@ -1,15 +1,61 @@
+import re
 import uuid
 from pathlib import Path
+from typing import Optional
 
-from mutagen.mp3 import MP3
 from mutagen.id3 import ID3
+from mutagen.mp3 import MP3
 from sqlmodel import Session, select
 
-from app.models import Track
 from app.db import engine
+from app.models import Track
 from app.utils.logger import setup_logger
 
 _logger = setup_logger(__name__)
+
+_CYRILLIC = re.compile(r"[а-яА-ЯёЁ]")
+
+
+def _tag_text_garbled(val: Optional[str]) -> bool:
+    """
+    True if metadata should be discarded in favor of folder / re-decode heuristics.
+    Catches ID3 decode failures (U+FFFD), all-placeholder artist strings, etc.
+    """
+    if val is None:
+        return True
+    s = str(val).strip()
+    if not s:
+        return True
+    if "\ufffd" in s:
+        return True
+    letters = [c for c in s if c.isalpha()]
+    if letters and all(c == "?" for c in letters):
+        return True
+    if len(s) >= 4 and s.count("?") >= len(s) * 0.5:
+        return True
+    return False
+
+
+def _decode_id3_text(val: str) -> str:
+    """
+    Recover Cyrillic (and similar) when mutagen gave Latin-1-style mojibake.
+    Tries CP1251 and UTF-8 bytes-via-latin-1, same family of fixes as common tag editors.
+    """
+    if not val or "\ufffd" in val:
+        return val
+    candidates = [val]
+    if all(ord(c) < 256 for c in val):
+        for encoding in ("cp1251", "utf-8"):
+            try:
+                fixed = val.encode("latin-1").decode(encoding)
+                candidates.append(fixed)
+            except (UnicodeEncodeError, UnicodeDecodeError):
+                pass
+    for c in candidates:
+        if _CYRILLIC.search(c) and "\ufffd" not in c:
+            return c
+    return val
+
 
 def scan_file(file_path: Path, session: Session) -> None:
     """
@@ -29,33 +75,32 @@ def scan_file(file_path: Path, session: Session) -> None:
         
         # If already indexed and title, artist, AND album look valid, skip
         if existing:
-            title_ok = not all(c == '?' or c == ' ' for c in str(existing.title))
-            artist_ok = existing.artist is not None and not all(c == '?' or c == ' ' for c in str(existing.artist))
-            album_ok = existing.album is not None and not all(c == '?' or c == ' ' for c in str(existing.album))
+            title_ok = not _tag_text_garbled(str(existing.title))
+            artist_ok = existing.artist is not None and not _tag_text_garbled(
+                str(existing.artist)
+            )
+            album_ok = existing.album is not None and not _tag_text_garbled(
+                str(existing.album)
+            )
             if title_ok and artist_ok and album_ok:
                 return
 
         audio = MP3(file_path, ID3=ID3)
-        
+
         def clean_tag(tag_list):
-            if not tag_list: return None
+            if not tag_list:
+                return None
             val = str(tag_list[0])
-            # Common fix for mangled CP1251 interpreted as Latin-1
-            if all(ord(c) < 256 for c in val):
-                try:
-                    # Attempt to recover Cyrillic from mis-decoded bytes
-                    test_val = val.encode('latin-1').decode('cp1251')
-                    # If it looks like Cyrillic (contains at least one cyrillic char), use it
-                    import re
-                    if re.search(r'[а-яА-ЯёЁ]', test_val):
-                        return test_val
-                except (UnicodeEncodeError, UnicodeDecodeError):
-                    pass
-            return val
+            return _decode_id3_text(val)
 
         title = clean_tag(audio.get("TIT2")) or file_path.stem
         artist = clean_tag(audio.get("TPE1")) or clean_tag(audio.get("TPE2"))
         album = clean_tag(audio.get("TALB"))
+
+        if _tag_text_garbled(artist):
+            artist = None
+        if _tag_text_garbled(album):
+            album = None
         duration = int(audio.info.length) if audio.info else None
 
         # Hierarchical Folder Fallbacks
@@ -63,14 +108,14 @@ def scan_file(file_path: Path, session: Session) -> None:
         grandparent = parent.parent
         
         # Fallback for Album if missing or garbage
-        if not album or all(c == '?' or c == ' ' for c in str(album)):
+        if not album or _tag_text_garbled(str(album)):
             if parent.name.lower() not in ["library", "e-music", "music"]:
                 album = parent.name
             else:
                 album = "Unknown Album"
 
         # Fallback for Artist if missing or garbage
-        if not artist or all(c == '?' or c == ' ' for c in str(artist)):
+        if not artist or _tag_text_garbled(str(artist)):
             if grandparent.name.lower() not in ["library", "e-music", "music"]:
                 # Structure: .../Artist/Album/Track.mp3
                 artist = grandparent.name
@@ -80,8 +125,8 @@ def scan_file(file_path: Path, session: Session) -> None:
             else:
                 artist = "Unknown Artist"
 
-        # Sanity check for title
-        if title and all(c == '?' or c == ' ' for c in str(title)):
+        # Sanity check for title (prefer Unicode filename when tags are junk)
+        if title and _tag_text_garbled(str(title)):
             title = file_path.stem
 
         if existing:

@@ -1,24 +1,20 @@
-from fastapi import APIRouter, BackgroundTasks, Request, Depends
-from app.config import settings
+from fastapi import APIRouter, BackgroundTasks, Depends
+
+from app.dependencies import get_admin_user
 from app.indexer import run_indexer
+from app.models import User
 from app.utils.logger import setup_logger
 
 _logger = setup_logger(__name__)
 
 router = APIRouter(prefix="/system", tags=["system"])
 
-@router.get("/config")
-async def get_system_config(request: Request) -> dict:
-    """
-    Expose public configuration for the system.
-    """
-    return {
-        "google_client_id": settings.GOOGLE_CLIENT_ID,
-        "api_base_url": str(request.base_url).rstrip('/')
-    }
 
 @router.post("/index")
-async def trigger_index(background_tasks: BackgroundTasks) -> dict:
+async def trigger_index(
+    background_tasks: BackgroundTasks,
+    _: User = Depends(get_admin_user),
+) -> dict:
     """
     Manually trigger a full library index scan.
     """
@@ -27,7 +23,7 @@ async def trigger_index(background_tasks: BackgroundTasks) -> dict:
     return {"message": "Indexing started in background"}
 
 @router.get("/storage")
-async def get_storage() -> dict:
+async def get_storage(_: User = Depends(get_admin_user)) -> dict:
     """
     Get backend server storage statistics.
     """

@@ -6,23 +6,58 @@ class ApiClient {
   final String baseUrl;
   final _storage = const FlutterSecureStorage();
 
+  static const _kAccess = 'jwt_token';
+  static const _kRefresh = 'jwt_refresh_token';
+
   ApiClient({required this.baseUrl});
 
   Future<String?> getToken() async {
-    return await _storage.read(key: 'jwt_token');
+    return await _storage.read(key: _kAccess);
+  }
+
+  Future<String?> getRefreshToken() async {
+    return await _storage.read(key: _kRefresh);
   }
 
   Future<void> saveToken(String token) async {
-    await _storage.write(key: 'jwt_token', value: token);
+    await _storage.write(key: _kAccess, value: token);
+  }
+
+  Future<void> saveRefreshToken(String token) async {
+    await _storage.write(key: _kRefresh, value: token);
+  }
+
+  Future<void> saveTokenPair(String access, String refresh) async {
+    await saveToken(access);
+    await saveRefreshToken(refresh);
   }
 
   Future<void> deleteToken() async {
-    await _storage.delete(key: 'jwt_token');
+    await _storage.delete(key: _kAccess);
+    await _storage.delete(key: _kRefresh);
+  }
+
+  Future<bool> _tryRefresh() async {
+    final refresh = await getRefreshToken();
+    if (refresh == null || refresh.isEmpty) return false;
+    final response = await http.post(
+      Uri.parse('$baseUrl/auth/refresh'),
+      headers: {'Content-Type': 'application/json'},
+      body: jsonEncode({'refresh_token': refresh}),
+    );
+    if (response.statusCode != 200) return false;
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    final access = data['access_token'] as String?;
+    final next = data['refresh_token'] as String?;
+    if (access == null || next == null) return false;
+    await saveTokenPair(access, next);
+    return true;
   }
 
   Future<http.Response> get(
     String endpoint, {
     bool authenticated = true,
+    bool retryOn401 = true,
   }) async {
     Map<String, String> headers = {'Content-Type': 'application/json'};
 
@@ -33,7 +68,21 @@ class ApiClient {
       }
     }
 
-    return await http.get(Uri.parse('$baseUrl$endpoint'), headers: headers);
+    http.Response response = await http.get(
+      Uri.parse('$baseUrl$endpoint'),
+      headers: headers,
+    );
+    if (authenticated &&
+        retryOn401 &&
+        response.statusCode == 401 &&
+        await _tryRefresh()) {
+      String? token = await getToken();
+      if (token != null) {
+        headers['Authorization'] = 'Bearer $token';
+      }
+      response = await http.get(Uri.parse('$baseUrl$endpoint'), headers: headers);
+    }
+    return response;
   }
 
   Future<http.Response> post(
@@ -41,6 +90,7 @@ class ApiClient {
     Map<String, dynamic>? body,
     bool authenticated = true,
     bool useFormData = false,
+    bool retryOn401 = true,
   }) async {
     Map<String, String> headers = {};
     if (!useFormData) {
@@ -63,16 +113,40 @@ class ApiClient {
       finalBody = body != null ? jsonEncode(body) : null;
     }
 
-    return await http.post(
+    http.Response response = await http.post(
       Uri.parse('$baseUrl$endpoint'),
       headers: headers,
       body: finalBody,
     );
+    if (authenticated &&
+        retryOn401 &&
+        response.statusCode == 401 &&
+        _allowRefreshRetry(endpoint) &&
+        await _tryRefresh()) {
+      String? token = await getToken();
+      if (token != null) {
+        headers['Authorization'] = 'Bearer $token';
+      }
+      response = await http.post(
+        Uri.parse('$baseUrl$endpoint'),
+        headers: headers,
+        body: finalBody,
+      );
+    }
+    return response;
+  }
+
+  /// Avoid refresh loop on auth endpoints.
+  static bool _allowRefreshRetry(String endpoint) {
+    return !endpoint.startsWith('/auth/token') &&
+        !endpoint.startsWith('/auth/refresh') &&
+        !endpoint.startsWith('/auth/register');
   }
 
   Future<http.Response> delete(
     String endpoint, {
     bool authenticated = true,
+    bool retryOn401 = true,
   }) async {
     Map<String, String> headers = {'Content-Type': 'application/json'};
 
@@ -83,6 +157,23 @@ class ApiClient {
       }
     }
 
-    return await http.delete(Uri.parse('$baseUrl$endpoint'), headers: headers);
+    http.Response response = await http.delete(
+      Uri.parse('$baseUrl$endpoint'),
+      headers: headers,
+    );
+    if (authenticated &&
+        retryOn401 &&
+        response.statusCode == 401 &&
+        await _tryRefresh()) {
+      String? token = await getToken();
+      if (token != null) {
+        headers['Authorization'] = 'Bearer $token';
+      }
+      response = await http.delete(
+        Uri.parse('$baseUrl$endpoint'),
+        headers: headers,
+      );
+    }
+    return response;
   }
 }

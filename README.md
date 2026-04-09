@@ -42,7 +42,8 @@ MySpotify is a high-performance, self-hosted music sanctuary. It eliminates subs
 ### Backend Deployment (Docker & RPi)
 1. Ensure your local library is mounted to `/app/library`.
 2. Configure your `.env` with `GOOGLE_CLIENT_ID` and `DOMAIN`.
-3. Run `docker compose up -d --build`.
+3. Register **Authorized JavaScript origins** and **Authorized redirect URIs** in Google Cloud ([docs/local-setup.md](docs/local-setup.md), §6).
+4. Run `docker compose up -d --build`.
 
 ### Android Build
 1. Open the `/mobile/android` folder in **Android Studio**.

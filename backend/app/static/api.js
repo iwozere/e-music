@@ -1,28 +1,46 @@
 // api.js - Network & Constants
 const CONFIG = {
-    apiBase: window.location.origin,
+    apiBase: `${window.location.origin}/api/v1`,
     googleBtnId: 'google-login-btn'
 };
 
-const apiFetch = async (endpoint, options = {}) => {
+const tryRefreshTokens = async () => {
+    const refresh = localStorage.getItem('refresh_token');
+    if (!refresh) return false;
+    const res = await fetch(`${CONFIG.apiBase}/auth/refresh`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refresh_token: refresh }),
+    });
+    if (!res.ok) return false;
+    const data = await res.json();
+    localStorage.setItem('token', data.access_token);
+    localStorage.setItem('refresh_token', data.refresh_token);
+    return true;
+};
+
+const apiFetch = async (endpoint, options = {}, retried = false) => {
     const token = localStorage.getItem('token');
     const headers = { ...options.headers };
-    // Only attach auth header when a real token exists — avoids sending 'Bearer null'
     if (token) {
         headers['Authorization'] = `Bearer ${token}`;
     }
-    
-    // Add 30s timeout
+
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 30000);
-    
+
     try {
-        const response = await fetch(`${CONFIG.apiBase}${endpoint}`, { 
-            ...options, 
+        let response = await fetch(`${CONFIG.apiBase}${endpoint}`, {
+            ...options,
             headers,
             signal: controller.signal
         });
         clearTimeout(timeoutId);
+        if (!retried && response.status === 401 && localStorage.getItem('refresh_token')) {
+            if (await tryRefreshTokens()) {
+                return apiFetch(endpoint, options, true);
+            }
+        }
         return response;
     } catch (e) {
         clearTimeout(timeoutId);
@@ -79,7 +97,7 @@ const API = {
         headers: { 'Authorization': `Bearer ${token}` }
     }),
 
-    getSystemConfig: () => fetch(`${CONFIG.apiBase}/system/config`)
+    getPublicConfig: () => fetch(`${CONFIG.apiBase}/config`)
 };
 
 // Explicit exports for global scope
