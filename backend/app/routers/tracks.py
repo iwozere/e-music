@@ -290,6 +290,7 @@ async def _search_tracks_core(
 @router.get("/search", response_model=List[dict])
 @limiter.limit("90/minute")
 async def search(
+    request: Request,
     q: str,
     offset: int = 0,
     limit: int = 20,
@@ -553,6 +554,7 @@ async def grant_stream_url(
 @router.get("/stream/{track_id}")
 @limiter.limit("200/minute")
 async def stream_track(  # pylint: disable=too-many-arguments,too-many-positional-arguments
+    request: Request,
     track_id: str,
     background_tasks: BackgroundTasks,
     session: Session = Depends(get_session),
