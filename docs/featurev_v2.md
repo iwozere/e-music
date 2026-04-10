@@ -62,3 +62,42 @@ Following the successful deployment of the core streaming infrastructure, we are
     - Implement `seekto` and `seekbackward/seekforward` action handlers.
     - Synchronize the `playbackState` (playing/paused) and `positionState` (current time/duration) accurately.
 - **iOS Note:** Scrubbing from the lock screen is a "must-have" for a premium mobile feel.
+
+---
+
+## Implementation status (vs. this document)
+
+Tracked against the current web dashboard (`backend/app/static/`) and backend. Use this to prioritize remaining “quick wins.”
+
+| Area | Status | Notes |
+| :--- | :----- | :---- |
+| **Sec. 1 — Media Session metadata** | **Partial** | `player.js` sets `MediaMetadata` (title, artist, artwork) when playback starts. |
+| **Sec. 1 / 6.4 — Media Session actions & position** | **Not done** | No `setActionHandler` for play/pause/previous/next; no `seekto` / seek ±; no `playbackState` or `positionState` updates (lock screen / OS controls limited). |
+| **Sec. 2 — Queue core** | **Done** | `state.queue`, Play Next / Add to Queue on cards, `ended` → `playNext`, queue sidebar. |
+| **Sec. 2 — End-of-queue “radio”** | **Not done (web)** | When queue and context wrap, player just continues in list; no call to `GET /api/v1/tracks/{id}/related`. |
+| **Sec. 3 — Keyboard shortcuts** | **Not done** | No global hotkeys (Space / arrows / mute); search `keydown` only handles Enter. |
+| **Sec. 4 / 6.3 — Caching** | **Mostly done** | Third play promotes YouTube tracks to persistent cache (`tracks.py` + `cache_manager`); `enforce_cache_limit()` drops oldest by **atime** when cache &gt; **5 GB** (hardcoded `MAX_CACHE_SIZE_GB`). Stream path prefers local file when cached. **Gap:** limit not env-configurable; eviction does not consult DB play counts (may delete “popular” files on disk while row still says cached). |
+| **Sec. 5 — Mobile readiness** | **Partial** | Google `ux_mode: 'redirect'` is used in `main.js`; full responsive / 44px audit not documented here. |
+| **Sec. 6.1 — Queue UI** | **Done (MVP)** | Toggle sidebar, list, remove item; **no** drag-and-drop reorder yet. |
+| **Sec. 6.2 — Radio (related API)** | **Backend ready** | Endpoint exists; **web client** does not wire autoplay from related tracks. |
+
+---
+
+## Suggested roadmap (next improvements)
+
+**From this document (finish the spec)**  
+1. **Media Session (high impact, small scope):** `setActionHandler` for play, pause, previoustrack, nexttrack wired to existing controls; update `playbackState` on play/pause/ended.  
+2. **Media Session position:** `timeupdate` (throttled) → `setPositionState` + `seekto` / `seekbackward` / `seekforward` handlers driving `audio.currentTime`.  
+3. **Keyboard shortcuts** in `main.js` or `player.js`: guard when focus is in `input` / `textarea` / contenteditable.  
+4. **Radio mode (web):** On `ended`, if queue empty and last track has `remote_id`, fetch related, append to `state.queue` or replace context (with user toggle “Autoplay similar”).  
+5. **Cache policy hardening:** Make max cache GB configurable; on eviction, update or invalidate `Track` rows whose `local_path` was removed; optional “protect tracks with play_count ≥ N.”
+
+**Additional ideas (not in the original list)**  
+- **PWA:** `manifest.json`, icons, optional service worker for shell cache (offline branding only; streaming still online).  
+- **A11y:** Visible focus styles, `aria-*` on player and queue, skip link to main content.  
+- **Flutter parity:** Same keyboard + media session behavior on Android; reuse `/tracks/stream/grant` flow for native player.  
+- **Observability:** Client-side breadcrumb or correlation id with `X-Request-ID` for support (“this play failed”).  
+- **Quality-of-life web:** Persist queue in `sessionStorage`, optional “clear queue on navigate,” mini-player on small viewports.  
+- **Testing:** Smoke tests for auth, stream grant, and liked/playlist navigation (Playwright or similar).
+
+For API and deployment truth, prefer [system_specification.md](system_specification.md) and [docker.md](docker.md); this file remains the **product** wish list for player UX.
