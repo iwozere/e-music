@@ -82,6 +82,26 @@ const PLAYER = {
 
 window.PLAYER = PLAYER;
 
+/** After a failed <audio> load, fetch the same signed URL once to read FastAPI JSON `detail` (503). */
+async function fetchStreamErrorDetail(url) {
+    try {
+        const ctrl = new AbortController();
+        const timer = setTimeout(() => ctrl.abort(), 12000);
+        const r = await fetch(url, { signal: ctrl.signal });
+        clearTimeout(timer);
+        if (!r.ok) {
+            const j = await r.json().catch(() => null);
+            if (!j || j.detail == null) return null;
+            if (typeof j.detail === 'string') return j.detail;
+            if (Array.isArray(j.detail)) {
+                return j.detail.map((e) => e.msg || JSON.stringify(e)).join('; ');
+            }
+            return String(j.detail);
+        }
+    } catch (_) { /* network / abort */ }
+    return null;
+}
+
 /** Grant URLs must be https when the app runs on https (mixed content blocks <audio src=http>). */
 function coerceStreamUrlToPageHttps(url) {
     if (!url || typeof url !== 'string' || window.location.protocol !== 'https:') return url;
@@ -181,12 +201,15 @@ window.playTrack = async (trackId, title, artist, thumbnail) => {
         } catch (err) {
             const code = audio.error ? audio.error.code : '';
             console.warn("[Player] Playback failed:", err.message, 'mediaError=', code);
-            if (typeof UI !== 'undefined' && UI.showToast) {
-                const hint = code === 4
-                    ? 'Open DevTools → Network, find the /tracks/stream request (503 = YouTube/ffmpeg on server).'
-                    : 'Playback failed — try another track or check server logs';
-                UI.showToast(hint);
+            let toastMsg = 'Playback failed — try another track or check server logs';
+            if (code === 4) {
+                const detail = await fetchStreamErrorDetail(streamUrl);
+                toastMsg =
+                    detail ||
+                    'Stream failed (open Network → /tracks/stream for HTTP status; 503 = YouTube/yt-dlp on server).';
             }
+            if (toastMsg.length > 320) toastMsg = `${toastMsg.slice(0, 317)}…`;
+            if (typeof UI !== 'undefined' && UI.showToast) UI.showToast(toastMsg);
             state.isPlaying = false;
         }
     }

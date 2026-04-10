@@ -33,6 +33,10 @@ class Settings(BaseSettings):
     # e.g. https://api.example.com — used for signed stream URLs and GET /api/v1/config when
     # the app is reached via an internal URL (Docker network) but clients use a public host.
     PUBLIC_API_BASE_URL: Optional[str] = None
+    # YouTube / yt-dlp: datacenter IPs are often blocked with the default web client; optional
+    # Netscape-format cookies.txt helps a lot. Extra args are appended (see streamer._build_yt_dlp_argv).
+    YTDLP_COOKIES_FILE: Optional[str] = None
+    YTDLP_EXTRA_ARGS: str = ""
 
     @classmethod
     def strip_variables(cls, values: dict) -> dict:

@@ -12,3 +12,24 @@ http://e-music.win, http://api.e-music.win {
         header_up X-Forwarded-Host {host}
     }
 }
+
+
+# E-Call — same idea as e-music: tunnel is HTTP, app should see HTTPS
+http://call.e-music.win {
+    reverse_proxy ecall-nginx:80 {
+        header_up X-Forwarded-Proto https
+        header_up X-Forwarded-Host {host}
+    }
+}
+
+# Optional until LiveKit exists — avoids opaque 502s
+# When LiveKit runs on Docker as service livekit on the same networks as Caddy, replace the conf block with:
+# http://conf.e-music.win {
+#     reverse_proxy livekit:7880 {
+#         header_up X-Forwarded-Proto https
+#         header_up X-Forwarded-Host {host}
+#     }
+# }
+http://conf.e-music.win {
+    respond "LiveKit not deployed yet" 503
+}
