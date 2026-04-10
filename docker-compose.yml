@@ -54,6 +54,7 @@ services:
       - backend
     networks:
       - myspotify-network
+      - pi_ecall   # ADD — name is arbitrary
 
   tunnel:
     image: cloudflare/cloudflared:latest
@@ -72,6 +73,8 @@ services:
 networks:
   myspotify-network:
     driver: bridge
+  pi_ecall:        # ADD — must match `docker inspect` name
+    external: true
 
 volumes:
   caddy_data:

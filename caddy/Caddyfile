@@ -16,7 +16,7 @@ http://e-music.win, http://api.e-music.win {
 
 # E-Call — same idea as e-music: tunnel is HTTP, app should see HTTPS
 http://call.e-music.win {
-    reverse_proxy ecall-nginx:80 {
+    reverse_proxy pi-nginx-1:80 {
         header_up X-Forwarded-Proto https
         header_up X-Forwarded-Host {host}
     }
