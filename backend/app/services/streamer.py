@@ -5,13 +5,14 @@ Uses subprocess.Popen (not asyncio.create_subprocess_exec) so it works on
 both Windows SelectorEventLoop and Linux EpollEventLoop.
 FastAPI automatically runs sync generators in a thread-pool executor.
 """
+import asyncio
 import mimetypes
 import os
 import sys
 import shutil
 import subprocess
 import threading
-from typing import Dict, Generator, Optional, Union
+from typing import Dict, Generator, Iterator, Optional, Union
 
 from fastapi import HTTPException
 from fastapi.responses import StreamingResponse, FileResponse
@@ -286,12 +287,39 @@ async def stream_youtube(
                     except Exception:
                         _logger.exception("Library import after stream failed for %s", track_id)
 
+    def _pull_first_chunk(
+        gen: Iterator[bytes],
+    ) -> Union[tuple[bytes, Iterator[bytes]], tuple[None, None]]:
+        """Run first step of the sync generator off the asyncio event loop."""
+        try:
+            chunk = next(gen)
+        except StopIteration:
+            return (None, None)
+        return (chunk, gen)
+
+    gen = _stream_sync()
+    first_chunk, rest = await asyncio.to_thread(_pull_first_chunk, gen)
+    if first_chunk is None or rest is None:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Could not start audio stream (no data from YouTube/ffmpeg). "
+                "The video may be unavailable, blocked for this server, or "
+                "yt-dlp/ffmpeg may need attention — check server logs."
+            ),
+        )
+
+    def _body() -> Generator[bytes, None, None]:
+        yield first_chunk
+        yield from rest
+
     return StreamingResponse(
-        _stream_sync(),
+        _body(),
         media_type="audio/mpeg",
         headers={
             "Accept-Ranges": "none",
-            "Cache-Control": "no-store",
+            "Cache-Control": "no-store, no-transform",
+            "X-Accel-Buffering": "no",
         },
     )
 

@@ -182,7 +182,10 @@ window.playTrack = async (trackId, title, artist, thumbnail) => {
             const code = audio.error ? audio.error.code : '';
             console.warn("[Player] Playback failed:", err.message, 'mediaError=', code);
             if (typeof UI !== 'undefined' && UI.showToast) {
-                UI.showToast('Playback failed — try another track or check server logs');
+                const hint = code === 4
+                    ? 'Open DevTools → Network, find the /tracks/stream request (503 = YouTube/ffmpeg on server).'
+                    : 'Playback failed — try another track or check server logs';
+                UI.showToast(hint);
             }
             state.isPlaying = false;
         }

@@ -246,10 +246,11 @@ async def _resolved_stream_for_track(
 
     remote_key = track.remote_id
     _logger.info("Streaming from YouTube: %s", remote_key)
-    allow_disk = track.is_cached if track else True
+    # Always allow validated on-disk cache (min-size check in streamer). When is_cached is
+    # false but a healthy temp file exists (e.g. DB not updated yet), this still plays.
     return await streamer.stream_youtube(
         remote_key,
-        allow_disk_cache=allow_disk,
+        allow_disk_cache=True,
         library_user_id=library_uid,
     )
 
