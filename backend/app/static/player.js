@@ -4,6 +4,18 @@ const PLAYER = {
         const audio = document.getElementById('main-audio');
         if (!audio) return;
 
+        audio.addEventListener('error', () => {
+            const err = audio.error;
+            console.warn(
+                '[Player] <audio> error:',
+                err ? `code=${err.code} ${err.message || ''}` : 'unknown',
+                'src=',
+                audio.currentSrc || audio.src,
+                'networkState=',
+                audio.networkState,
+            );
+        });
+
         audio.addEventListener('timeupdate', () => {
             const percent = (audio.currentTime / audio.duration) * 100;
             const seekFill = document.getElementById('seek-fill');

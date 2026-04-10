@@ -5,6 +5,7 @@ Uses subprocess.Popen (not asyncio.create_subprocess_exec) so it works on
 both Windows SelectorEventLoop and Linux EpollEventLoop.
 FastAPI automatically runs sync generators in a thread-pool executor.
 """
+import mimetypes
 import os
 import sys
 import shutil
@@ -30,6 +31,31 @@ TEMP_CACHE_DIR: str = settings.TEMP_DIR
 # Registry to prevent duplicate yt-dlp processes for the same track
 _active_downloads: Dict[str, threading.Event] = {}
 _active_downloads_lock = threading.Lock()
+
+# Browsers rely on Content-Type for <audio>; guess_type is incomplete on some platforms.
+_AUDIO_EXT_MEDIA_TYPES: Dict[str, str] = {
+    ".mp3": "audio/mpeg",
+    ".m4a": "audio/mp4",
+    ".mp4": "audio/mp4",
+    ".aac": "audio/aac",
+    ".flac": "audio/flac",
+    ".ogg": "audio/ogg",
+    ".oga": "audio/ogg",
+    ".opus": "audio/opus",
+    ".wav": "audio/wav",
+    ".webm": "audio/webm",
+    ".wma": "audio/x-ms-wma",
+}
+
+
+def _audio_media_type_for_path(file_path: str) -> str:
+    ext = os.path.splitext(file_path)[1].lower()
+    if ext in _AUDIO_EXT_MEDIA_TYPES:
+        return _AUDIO_EXT_MEDIA_TYPES[ext]
+    guessed, _ = mimetypes.guess_type(file_path)
+    if guessed and guessed.startswith("audio/"):
+        return guessed
+    return "application/octet-stream"
 
 
 def _find_executable(name: str) -> str:
@@ -273,4 +299,4 @@ async def stream_youtube(
 def get_local_stream(file_path: str) -> FileResponse:
     """Stream a local audio file with HTTP Range support."""
     _logger.info("Streaming local file: %s", file_path)
-    return FileResponse(file_path, media_type="audio/mpeg")
+    return FileResponse(file_path, media_type=_audio_media_type_for_path(file_path))
