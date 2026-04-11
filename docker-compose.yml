@@ -43,5 +43,5 @@ services:
 networks:
   myspotify-network:
     driver: bridge
-  infra-net:                     # ← ADD THIS
-    external: true               # ← tells Compose this network is owned by pi-infra
+  infra-net: 
+    external: true
