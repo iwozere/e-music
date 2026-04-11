@@ -175,9 +175,9 @@ With multiple users, the search gets "smarter":
 
 ### Implementation Requirements:
 
-* **Infrastructure:** Run a `cloudflared` Docker container on the Raspberry Pi.
-* **Security:** Cloudflare provides the SSL termination (HTTPS). The mobile app will connect to a custom domain (e.g., `https://music.yourdomain.com`).
-* **App Logic:** The Android/Web client must support a configurable "Base URL" to point to the Cloudflare endpoint.
+* **Infrastructure:** Expose the API over HTTPS (e.g. Cloudflare Tunnel with `cloudflared` in a separate **pi-infra** compose project, or another VPN/TLS setup). This **e-music** repo does not define the tunnel container.
+* **Security:** Terminate TLS at the edge (e.g. Cloudflare) or your reverse proxy. The mobile app connects to your chosen public base URL.
+* **App Logic:** The Android/Web client must support a configurable "Base URL" for that public API origin.
 
 ## 2. Persistent Storage & Disk Management
 
@@ -215,9 +215,9 @@ With multiple users, the search gets "smarter":
 
 ## 4. Technical Stack Summary for Agent
 
-* **Tunneling:** `cloudflared` (sidecar container).
+* **Tunneling:** Optional; `cloudflared` typically runs in **pi-infra**, not in this compose file.
 * **Backend:** FastAPI + SQLAlchemy (SQLite).
-* **Proxy:** Reverse proxy in the **pi-infra** project (e.g. Caddy) for HTTP routing to this stack.
+* **Proxy:** Reverse proxy in **pi-infra** (e.g. Caddy) routes public hostnames to **`backend:8000`** on shared Docker network `infra-net`.
 * **Mobile Auth:** `AppAuth-Android` or Flutter `google_sign_in` for OAuth2 flow.
 
 

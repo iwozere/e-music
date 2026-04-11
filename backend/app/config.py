@@ -51,12 +51,15 @@ class Settings(BaseSettings):
         return values
 
     def __init__(self, **values):
+        """Instantiate settings from keyword arguments (typically env-backed), trimming strings."""
         super().__init__(**self.strip_variables(values))
 
     def admin_email_set(self) -> set[str]:
+        """Return unique admin emails from ``ADMIN_EMAILS`` (comma-separated, lowercased)."""
         return {e.strip().lower() for e in self.ADMIN_EMAILS.split(",") if e.strip()}
 
     def stream_signing_secret(self) -> str:
+        """Secret used to sign short-lived stream URLs; falls back to ``JWT_SECRET`` if unset."""
         return self.STREAM_URL_SIGNING_SECRET or self.JWT_SECRET
 
 

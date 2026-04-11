@@ -5,10 +5,14 @@ Build a self-hosted music streaming ecosystem for Raspberry Pi 5 (Ubuntu). The s
 
 ## 2. Infrastructure & Networking
 - **Hardware:** Raspberry Pi 5 with internal SSD.
-- **Domain:** `e-music.win`
-- **Connectivity:** Cloudflare Tunnel (Connector: `cloudflared` in Docker).
-- **Public API:** `https://api.e-music.win`
-- **Cloudflare Tunnel Token:** .env file, variable CLOUDFLARE_TUNNEL_TOKEN
+- **Domain / HTTPS:** Your public hostname (e.g. `e-music.win`) is configured at the edge (DNS, TLS, tunnel). This repo does **not** run `cloudflared` or Caddy; those typically live in a separate stack such as **pi-infra**.
+- **This Compose file:** Defines the **backend** and **db-init** only. Optional external network **`infra-net`** lets a reverse proxy on that network forward to **`backend:8000`** by service name.
+- **App configuration:** Use **`PUBLIC_API_BASE_URL`** in `.env` when clients reach the API on a public `https://…` host while the app sees an internal `Host` header. The backend does **not** read tunnel tokens (`CLOUDFLARE_TUNNEL_TOKEN` is not an application setting).
+
+### Optional `.env` (proxy + YouTube)
+
+- **`PUBLIC_API_BASE_URL`**: Public `https://…` origin of the API for signed stream URLs when the app is reached via an internal URL behind a reverse proxy.
+- **`YTDLP_COOKIES_FILE`**, **`YTDLP_YOUTUBE_PLAYER_CLIENT`**, **`YTDLP_EXTRA_ARGS`**: Tune server-side YouTube extraction (see `backend/app/config.py` and `app/services/streamer.py`).
 
 ## 3. Storage & Disk Management
 - **Root Directory:** `/share/e-music` (On system SSD, accessible via local network).
@@ -59,12 +63,11 @@ Run these from the project root where `docker-compose.yml` lives (for example `/
 - **Follow logs (Ctrl+C to stop):**  
   `docker compose logs -f --tail=50`
 
-- **One service (backend, tunnel):**  
-  `docker compose logs --tail=80 backend`  
-  `docker compose logs --tail=80 tunnel`
+- **Backend only:**  
+  `docker compose logs --tail=80 backend`
 
 - **Timestamped lines:**  
-  `docker compose logs -f -t tunnel`
+  `docker compose logs -f -t backend`
 
 ### Lifecycle
 
@@ -113,7 +116,7 @@ Run these from the project root where `docker-compose.yml` lives (for example `/
   `docker compose exec backend sh`  
   or `docker compose exec backend bash` if available.
 
-- **Note:** The `cloudflared` image often has no shell; test with `curl` from a throwaway container on the same network (see above) instead of `docker compose exec tunnel sh`.
+- **Tunnel / edge:** If `cloudflared` runs in **pi-infra**, use that project’s docs to inspect or debug it; this compose stack has no `tunnel` service.
 
 ### Disk and cleanup
 

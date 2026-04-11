@@ -32,6 +32,8 @@ The backend is configured via a `.env` file containing:
 - `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`: For OAuth2.
 - `JWT_SECRET`: For secure token signing.
 - `DATABASE_URL`: Path to the SQLite database.
+- `PUBLIC_API_BASE_URL` (optional): Public API origin when behind a reverse proxy.
+- `YTDLP_COOKIES_FILE`, `YTDLP_YOUTUBE_PLAYER_CLIENT`, `YTDLP_EXTRA_ARGS` (optional): YouTube / `yt-dlp` behavior on the server.
 
 ## Related Documentation
 - [Requirements](docs/Requirements.md) - Technical requirements

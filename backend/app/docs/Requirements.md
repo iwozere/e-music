@@ -17,7 +17,7 @@
 
 ## External Services
 - **Google OAuth2**: Required for secondary authentication method.
-- **Cloudflare Tunnel**: For secure exposure of the local API.
+- **HTTPS / public access**: Optional; implemented outside this app (e.g. reverse proxy + tunnel in **pi-infra**), not a Python dependency.
 
 ## System Requirements
 - **Memory**: Minimum 512MB RAM for indexing and streaming.

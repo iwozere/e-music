@@ -170,6 +170,6 @@ The dashboard JavaScript and HTML ship **inside the backend image**. After chang
 
 ## 7. Related documents
 
-- [docker.md](docker.md) — Compose, rebuild, troubleshooting on Pi / tunnel setup.
+- [docker.md](docker.md) — Compose, rebuild, troubleshooting on Pi / reverse-proxy setup.
 - [local-setup.md](local-setup.md) — Local dev, OAuth redirect URLs, environment variables.
 - [requirements.md](requirements.md) — Product requirements (may overlap this spec).

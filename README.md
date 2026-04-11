@@ -2,9 +2,11 @@
 
 A self-hosted, full-stack music ecosystem that bridges your local library with the vast universe of YouTube Music.
 
-![MySpotify Dashboard](static/assets/dashboard_preview.png) ## 🚀 Overview
+![MySpotify Dashboard](static/assets/dashboard_preview.png)
 
-MySpotify is a high-performance, self-hosted music sanctuary. It eliminates subscription costs by combining a **FastAPI** backend with a lightweight, responsive **Vanilla JS** frontend. Designed to run on a **Raspberry Pi 5**, it leverages Cloudflare Tunnels for secure remote access and features a hybrid Android/Web architecture.
+## 🚀 Overview
+
+MySpotify is a high-performance, self-hosted music sanctuary. It eliminates subscription costs by combining a **FastAPI** backend with a lightweight, responsive **Vanilla JS** frontend. Designed to run on a **Raspberry Pi 5**, it can sit behind any HTTPS reverse proxy or tunnel (for example Cloudflare Tunnel in a separate **pi-infra** stack) and features a hybrid Android/Web architecture.
 
 ## ✨ Key Features
 
@@ -20,7 +22,7 @@ MySpotify is a high-performance, self-hosted music sanctuary. It eliminates subs
 ### Backend
 - **Framework**: FastAPI (Python)
 - **Database**: SQLModel + SQLite
-- **Proxy/Web**: Reverse proxy (Caddy runs in the **pi-infra** project) & Cloudflare Tunnel
+- **Edge / TLS**: Not bundled here; use your own reverse proxy or tunnel (e.g. Caddy + `cloudflared` in **pi-infra**), or expose port `8000` directly for LAN use
 - **Authentication**: Google OAuth2 (Redirect Mode) & JWT
 
 ### Frontend & Mobile
@@ -34,7 +36,7 @@ MySpotify is a high-performance, self-hosted music sanctuary. It eliminates subs
 - `/backend`: FastAPI source, models, and background services.
 - `/static`: Modular frontend (HTML/JS/CSS).
 - `/mobile/android`: Android Studio project (WebView wrapper).
-- `docker-compose.yml`: Backend, DB init, and Cloudflare tunnel (reverse proxy is in **pi-infra**).
+- `docker-compose.yml`: Backend and DB init; optional external **`infra-net`** so a reverse proxy in **pi-infra** can reach `backend:8000` (no tunnel or Caddy service in this file).
 
 ## 🚦 Getting Started
 
@@ -54,3 +56,4 @@ MySpotify is a high-performance, self-hosted music sanctuary. It eliminates subs
 ### Real-time Logs
 ```bash
 docker compose logs -f backend
+```
