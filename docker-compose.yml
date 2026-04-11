@@ -3,7 +3,6 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: myspotify-backend
     restart: unless-stopped
     volumes:
       - ${MUSIC_PATH}/library:/app/library
