@@ -59,9 +59,8 @@ Run these from the project root where `docker-compose.yml` lives (for example `/
 - **Follow logs (Ctrl+C to stop):**  
   `docker compose logs -f --tail=50`
 
-- **One service (backend, Caddy proxy, tunnel):**  
+- **One service (backend, tunnel):**  
   `docker compose logs --tail=80 backend`  
-  `docker compose logs --tail=80 caddy`  
   `docker compose logs --tail=80 tunnel`
 
 - **Timestamped lines:**  
@@ -108,9 +107,6 @@ Run these from the project root where `docker-compose.yml` lives (for example `/
 - **Inspect a network (substitute real name from `ls`):**  
   `docker network inspect e-music_myspotify-network`
 
-- **Reach Caddy from another container on the same network (diagnostics):**  
-  `docker run --rm --network e-music_myspotify-network curlimages/curl curl -sS -i -H "Host: e-music.win" http://caddy:80/health`
-
 ### One-off commands inside a container
 
 - **Shell in backend (image must include a shell):**  
@@ -129,11 +125,9 @@ Run these from the project root where `docker-compose.yml` lives (for example `/
 
 ### Quick local health checks (on the host)
 
-- **Through Caddy on port 80 (use the real browser `Host`):**  
-  `curl -sS -i -H "Host: e-music.win" http://127.0.0.1/health`
-
-- **Inside backend (uvicorn):**  
-  `docker compose exec backend curl -sS -i http://127.0.0.1:8000/health`
+- **Backend directly (uvicorn):**  
+  `docker compose exec backend curl -sS -i http://127.0.0.1:8000/health`  
+  (Public HTTP routing is configured in the **pi-infra** reverse proxy, not in this compose file.)
 
 ### Version
 

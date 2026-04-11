@@ -7,7 +7,7 @@ from app.config import settings
 
 def _forwarded_api_base(request: Request) -> str | None:
     """
-    Prefer proxy headers so URLs stay https behind Cloudflare/Tunnel → HTTP → Caddy.
+    Prefer proxy headers so URLs stay https behind Cloudflare/Tunnel → HTTP → reverse proxy.
     """
     proto = (
         (request.headers.get("x-forwarded-proto") or "").split(",")[0].strip().lower()

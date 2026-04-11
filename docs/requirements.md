@@ -217,7 +217,7 @@ With multiple users, the search gets "smarter":
 
 * **Tunneling:** `cloudflared` (sidecar container).
 * **Backend:** FastAPI + SQLAlchemy (SQLite).
-* **Proxy:** Caddy (as an internal reverse proxy for local Docker networking).
+* **Proxy:** Reverse proxy in the **pi-infra** project (e.g. Caddy) for HTTP routing to this stack.
 * **Mobile Auth:** `AppAuth-Android` or Flutter `google_sign_in` for OAuth2 flow.
 
 

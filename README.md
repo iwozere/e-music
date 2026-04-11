@@ -20,7 +20,7 @@ MySpotify is a high-performance, self-hosted music sanctuary. It eliminates subs
 ### Backend
 - **Framework**: FastAPI (Python)
 - **Database**: SQLModel + SQLite
-- **Proxy/Web**: Caddy (Reverse Proxy) & Cloudflare Tunnel
+- **Proxy/Web**: Reverse proxy (Caddy runs in the **pi-infra** project) & Cloudflare Tunnel
 - **Authentication**: Google OAuth2 (Redirect Mode) & JWT
 
 ### Frontend & Mobile
@@ -34,8 +34,7 @@ MySpotify is a high-performance, self-hosted music sanctuary. It eliminates subs
 - `/backend`: FastAPI source, models, and background services.
 - `/static`: Modular frontend (HTML/JS/CSS).
 - `/mobile/android`: Android Studio project (WebView wrapper).
-- `/caddy`: Caddyfile configuration for local/remote routing.
-- `docker-compose.yml`: Full system orchestration (Backend, DB, Caddy).
+- `docker-compose.yml`: Backend, DB init, and Cloudflare tunnel (reverse proxy is in **pi-infra**).
 
 ## 🚦 Getting Started
 
