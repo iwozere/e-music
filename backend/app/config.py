@@ -29,7 +29,6 @@ class Settings(BaseSettings):
     CACHE_DIR: str = "/app/cache"
     TEMP_DIR: str = "/tmp/myspotify_cache"
     API_SUBDOMAIN: Optional[str] = None
-    CLOUDFLARE_TUNNEL_TOKEN: Optional[str] = None
     # e.g. https://api.example.com — used for signed stream URLs and GET /api/v1/config when
     # the app is reached via an internal URL (Docker network) but clients use a public host.
     PUBLIC_API_BASE_URL: Optional[str] = None

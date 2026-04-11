@@ -1,3 +1,6 @@
+# Backend only. TLS / tunnel / reverse proxy (Caddy, nginx, Traefik, cloudflared, etc.)
+# live in separate infra; optional external network below lets a proxy on that network
+# reach this service as host name "backend" port 8000.
 services:
   backend:
     build:
