@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     # HMAC for signed stream URLs; defaults to JWT_SECRET if empty.
     STREAM_URL_SIGNING_SECRET: str = ""
     STREAM_URL_TTL_SECONDS: int = 600
-    
+
     # Optional / Extra fields from .env
     MUSIC_PATH: str = "/app/library"
     CACHE_DIR: str = "/app/cache"
@@ -36,6 +36,9 @@ class Settings(BaseSettings):
     # YouTube / yt-dlp: datacenter IPs are often blocked with the default web client; optional
     # Netscape-format cookies.txt helps a lot. Extra args are appended (see streamer._build_yt_dlp_argv).
     YTDLP_COOKIES_FILE: Optional[str] = None
+    # Comma-separated yt-dlp YouTube clients (passed as youtube:player_client=...). Avoid
+    # leading with "android" unless you also supply a PO token (see yt-dlp YouTube docs).
+    YTDLP_YOUTUBE_PLAYER_CLIENT: str = "tv_embedded,web,mweb"
     YTDLP_EXTRA_ARGS: str = ""
 
     @classmethod

@@ -71,13 +71,16 @@ def _youtube_fail_record(video_id: str, message: str) -> None:
 def _build_yt_dlp_argv(track_video_id: str) -> list[str]:
     """yt-dlp argv: prefer clients that still work from server/datacenter IPs."""
     exe = _find_executable("yt-dlp")
+    clients = (settings.YTDLP_YOUTUBE_PLAYER_CLIENT or "tv_embedded,web,mweb").strip()
+    if not clients:
+        clients = "tv_embedded,web,mweb"
     argv: list[str] = [
         exe,
         "--no-playlist",
         "-f",
         "ba/bestaudio/best/worst",
         "--extractor-args",
-        "youtube:player_client=android,mweb",
+        f"youtube:player_client={clients}",
     ]
     ck = (settings.YTDLP_COOKIES_FILE or "").strip()
     if ck and os.path.isfile(ck):
