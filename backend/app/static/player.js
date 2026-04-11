@@ -17,14 +17,17 @@ const PLAYER = {
         });
 
         audio.addEventListener('timeupdate', () => {
-            const percent = (audio.currentTime / audio.duration) * 100;
+            const d = audio.duration;
+            const hasFiniteDuration = Number.isFinite(d) && d > 0;
+            // Chunked streams (e.g. YouTube proxy) often have no Content-Length → duration is Infinity/NaN
+            const percent = hasFiniteDuration ? (audio.currentTime / d) * 100 : 0;
             const seekFill = document.getElementById('seek-fill');
             const currentTimeEl = document.getElementById('current-time');
             const totalTimeEl = document.getElementById('total-time');
 
-            if (seekFill) seekFill.style.width = `${percent || 0}%`;
+            if (seekFill) seekFill.style.width = `${hasFiniteDuration ? percent : 0}%`;
             if (currentTimeEl) currentTimeEl.innerText = PLAYER.formatTime(audio.currentTime);
-            if (totalTimeEl) totalTimeEl.innerText = PLAYER.formatTime(audio.duration);
+            if (totalTimeEl) totalTimeEl.innerText = PLAYER.formatTime(d);
         });
 
         audio.addEventListener('ended', () => {
@@ -42,8 +45,9 @@ const PLAYER = {
                 const rect = seekBar.getBoundingClientRect();
                 const x = e.clientX - rect.left;
                 const percent = x / rect.width;
-                if (!isNaN(audio.duration)) {
-                    audio.currentTime = percent * audio.duration;
+                const d = audio.duration;
+                if (Number.isFinite(d) && d > 0) {
+                    audio.currentTime = percent * d;
                 }
             });
         }
@@ -64,7 +68,8 @@ const PLAYER = {
     },
 
     formatTime: (seconds) => {
-        if (isNaN(seconds)) return '0:00';
+        // Infinity/NaN: streamed audio without known length (no Content-Length); not "invalid" time
+        if (!Number.isFinite(seconds) || seconds < 0) return '--:--';
         const mins = Math.floor(seconds / 60);
         const secs = Math.floor(seconds % 60);
         return `${mins}:${secs.toString().padStart(2, '0')}`;
