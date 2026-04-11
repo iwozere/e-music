@@ -64,7 +64,7 @@ const UI = {
         }
 
         const html = tracks.map(track => {
-            const id = track.id || track.remote_id;
+            const id = trackPlaybackId(track);
             const isLiked = state.likedTrackIds.has(id) || track.is_liked;
             if (track.is_liked) state.likedTrackIds.add(id);
 

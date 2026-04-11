@@ -125,8 +125,8 @@ window.playTrack = async (trackId, title, artist, thumbnail) => {
     const audio = document.getElementById('main-audio');
     const playBtn = document.getElementById('btn-play');
 
-    state.currentTrackIndex = state.currentTracksContext.findIndex(t =>
-        (t.id && t.id === trackId) || (t.remote_id && t.remote_id === trackId)
+    state.currentTrackIndex = state.currentTracksContext.findIndex(
+        (t) => trackPlaybackId(t) === trackId
     );
 
     document.getElementById('player-title').innerText = title || "Unknown Title";
@@ -219,14 +219,14 @@ window.playTrack = async (trackId, title, artist, thumbnail) => {
 window.playNext = () => {
     if (state.queue.length > 0) {
         const next = state.queue.shift();
-        playTrack(next.id, next.title, next.artist, next.thumbnail);
+        playTrack(trackPlaybackId(next), next.title, next.artist, next.thumbnail);
         return;
     }
     if (state.currentTracksContext.length > 0) {
         let nextIndex = state.currentTrackIndex + 1;
         if (nextIndex >= state.currentTracksContext.length) nextIndex = 0;
         const next = state.currentTracksContext[nextIndex];
-        playTrack(next.id || next.remote_id, next.title, next.artist, next.thumbnail);
+        playTrack(trackPlaybackId(next), next.title, next.artist, next.thumbnail);
     }
 };
 
@@ -235,7 +235,7 @@ window.playPrevious = () => {
         let prevIndex = state.currentTrackIndex - 1;
         if (prevIndex < 0) prevIndex = state.currentTracksContext.length - 1;
         const prev = state.currentTracksContext[prevIndex];
-        playTrack(prev.id || prev.remote_id, prev.title, prev.artist, prev.thumbnail);
+        playTrack(trackPlaybackId(prev), prev.title, prev.artist, prev.thumbnail);
     }
 };
 
@@ -258,7 +258,7 @@ window.playAll = () => {
     if (state.currentTracksContext.length > 0) {
         state.queue = []; // Clear queue when playing context
         const first = state.currentTracksContext[0];
-        playTrack(first.id || first.remote_id, first.title, first.artist, first.thumbnail);
+        playTrack(trackPlaybackId(first), first.title, first.artist, first.thumbnail);
     }
 };
 
@@ -274,7 +274,7 @@ window.playRandom = async () => {
         state.currentTracksContext = shuffled;
         const first = shuffled[0];
         UI.showToast("Shuffling playback");
-        await playTrack(first.id || first.remote_id, first.title, first.artist, first.thumbnail);
+        await playTrack(trackPlaybackId(first), first.title, first.artist, first.thumbnail);
     }
 };
 

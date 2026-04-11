@@ -4,6 +4,21 @@ const CONFIG = {
     googleBtnId: 'google-login-btn'
 };
 
+/**
+ * Id for stream/grant, likes, playlists, queue. Prefer internal UUID so the backend
+ * resolves the DB row by primary key. Raw YouTube search rows only have videoId (11 chars).
+ */
+function trackPlaybackId(track) {
+    if (!track) return '';
+    const raw = track.id;
+    const rid = track.remote_id;
+    if (track.source_type === 'local' && raw) return String(raw);
+    if (typeof raw === 'string' && raw.length === 36 && raw.split('-').length === 5) {
+        return raw;
+    }
+    return raw || rid || '';
+}
+
 const tryRefreshTokens = async () => {
     const refresh = localStorage.getItem('refresh_token');
     if (!refresh) return false;
