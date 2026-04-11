@@ -1,3 +1,5 @@
+"""Environment-driven application settings (Pydantic ``BaseSettings``)."""
+
 from typing import Optional
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -32,11 +34,11 @@ class Settings(BaseSettings):
     # e.g. https://api.example.com — used for signed stream URLs and GET /api/v1/config when
     # the app is reached via an internal URL (Docker network) but clients use a public host.
     PUBLIC_API_BASE_URL: Optional[str] = None
-    # YouTube / yt-dlp: datacenter IPs are often blocked with the default web client; optional
-    # Netscape-format cookies.txt helps a lot. Extra args are appended (see streamer._build_yt_dlp_argv).
+    # YouTube / yt-dlp: datacenter IPs are often blocked with the default web client;
+    # optional Netscape cookies.txt helps. Extra args: streamer._build_yt_dlp_argv.
     YTDLP_COOKIES_FILE: Optional[str] = None
-    # Comma-separated yt-dlp YouTube clients (passed as youtube:player_client=...). Avoid
-    # leading with "android" unless you also supply a PO token (see yt-dlp YouTube docs).
+    # Comma-separated yt-dlp YouTube clients (youtube:player_client=...). Avoid leading
+    # with "android" unless you supply a PO token (yt-dlp YouTube docs).
     YTDLP_YOUTUBE_PLAYER_CLIENT: str = "tv_embedded,web,mweb"
     YTDLP_EXTRA_ARGS: str = ""
 
