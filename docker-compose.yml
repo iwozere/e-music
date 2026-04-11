@@ -8,11 +8,16 @@ services:
       dockerfile: Dockerfile
     restart: unless-stopped
     volumes:
-      - ${MUSIC_PATH}/library:/app/library
-      - ${MUSIC_PATH}/cache:/app/cache
-      - ${MUSIC_PATH}/db:/app/db
+      # Host paths: MUSIC_HOST_ROOT if set, else MUSIC_PATH (folder that contains library/, cache/, db/)
+      - ${MUSIC_HOST_ROOT:-${MUSIC_PATH}}/library:/app/library
+      - ${MUSIC_HOST_ROOT:-${MUSIC_PATH}}/cache:/app/cache
+      - ${MUSIC_HOST_ROOT:-${MUSIC_PATH}}/db:/app/db
       - ./backend/app:/app/app
     env_file: .env
+    # Inside the container paths must match the volume targets above (do not use host paths here).
+    environment:
+      MUSIC_PATH: /app/library
+      CACHE_DIR: /app/cache
     depends_on:
       - db-init
     networks:
@@ -38,7 +43,7 @@ services:
   db-init:
     image: alpine
     volumes:
-      - ${MUSIC_PATH}/db:/db
+      - ${MUSIC_HOST_ROOT:-${MUSIC_PATH}}/db:/db
     command: chown -R 1000:1000 /db
     networks:
       - myspotify-network

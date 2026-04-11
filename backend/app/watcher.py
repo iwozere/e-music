@@ -40,11 +40,31 @@ def start_watcher(library_path: str) -> None:
     Args:
         library_path: Absolute path to the library directory to monitor.
     """
+    lib = Path(library_path)
+    if not lib.exists():
+        try:
+            lib.mkdir(parents=True, exist_ok=True)
+            _logger.info("Created library directory for watcher: %s", lib)
+        except OSError as exc:
+            _logger.error(
+                "Cannot start library watcher — %s does not exist and could not be "
+                "created (%s). In Docker, set MUSIC_PATH to the path inside the "
+                "container (e.g. /app/library), matching your volume mount.",
+                library_path,
+                exc,
+            )
+            return
+    if not lib.is_dir():
+        _logger.error(
+            "Library path is not a directory; skipping watcher: %s", library_path
+        )
+        return
+
     event_handler = LibraryHandler()
     observer = Observer()
-    observer.schedule(event_handler, library_path, recursive=True)
+    observer.schedule(event_handler, str(lib.resolve()), recursive=True)
     observer.start()
-    _logger.info("Library watcher started on %s", library_path)
+    _logger.info("Library watcher started on %s", lib)
     try:
         while True:
             time.sleep(1)
