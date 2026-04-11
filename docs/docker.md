@@ -132,6 +132,16 @@ Run these from the project root where `docker-compose.yml` lives (for example `/
   `docker compose exec backend curl -sS -i http://127.0.0.1:8000/health`  
   (Public HTTP routing is configured in the **pi-infra** reverse proxy, not in this compose file.)
 
+### YouTube streaming (`yt-dlp` / EJS)
+
+If logs show **Signature solving failed**, **n challenge solving failed**, **Only images are available**, or **Requested format is not available**, YouTube is serving challenges that require **EJS** (embedded JS solvers) plus a **JavaScript runtime**.
+
+- The **backend Docker image** installs **Deno** and uses **`yt-dlp[default]`** (includes `yt-dlp-ejs`). Rebuild after pulling changes:  
+  `docker compose build --pull backend && docker compose up -d backend`
+- **Verify inside the container:**  
+  `docker compose exec backend sh -c "deno --version && yt-dlp --version"`  
+- **Cookies** (often needed from datacenter IPs): export `cookies.txt` from a logged-in browser and set **`YTDLP_COOKIES_FILE`** in `.env` to its path **inside the container** (mount the file or bake it into a path you pass through `environment:`). See [yt-dlp EJS](https://github.com/yt-dlp/yt-dlp/wiki/EJS) and [PO Token Guide](https://github.com/yt-dlp/yt-dlp/wiki/PO-Token-Guide) if mweb formats still 403.
+
 ### Version
 
 - **Compose plugin:**  

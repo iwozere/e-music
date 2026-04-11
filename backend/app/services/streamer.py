@@ -377,9 +377,10 @@ async def stream_youtube(
     if first_chunk is None or rest is None:
         fail_detail = (
             "Could not start audio from YouTube (no data from yt-dlp/ffmpeg). "
-            "Try: pip install -U yt-dlp, rebuild the app image, and/or set "
-            "YTDLP_COOKIES_FILE to a Netscape cookies.txt from a logged-in browser. "
-            "Check server logs for yt-dlp/ffmpeg stderr."
+            "Install/upgrade: pip install -U 'yt-dlp[default]' with Deno or Node 20+ in PATH "
+            "(Docker image includes Deno). Set YTDLP_COOKIES_FILE if needed. "
+            "See server logs for yt-dlp/ffmpeg stderr and "
+            "https://github.com/yt-dlp/yt-dlp/wiki/EJS"
         )
         _youtube_fail_record(track_id, fail_detail)
         raise HTTPException(status_code=503, detail=fail_detail)
