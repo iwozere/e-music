@@ -7,11 +7,39 @@ from mutagen.id3 import ID3
 from mutagen.mp3 import MP3
 from sqlmodel import Session, select
 
+from app.config import settings
 from app.db import engine
 from app.models import Track
 from app.utils.logger import setup_logger
 
 _logger = setup_logger(__name__)
+
+
+def _skip_transient_storage_path(file_path: Path) -> bool:
+    """
+    True if the file lives under disk cache or temp download dirs.
+
+    Those folders hold transcoded YouTube files; indexing them produces junk rows
+    (artist = folder name ``temp_cache``, title = video id).
+    """
+    roots: list[Path] = []
+    for raw in (settings.CACHE_DIR, settings.TEMP_DIR):
+        p = Path(raw)
+        try:
+            roots.append(p.resolve(strict=False))
+        except OSError:
+            roots.append(p)
+    try:
+        f = file_path.resolve(strict=False)
+    except OSError:
+        f = file_path
+    for root in roots:
+        try:
+            if f == root or f.is_relative_to(root):
+                return True
+        except ValueError:
+            continue
+    return False
 
 _CYRILLIC = re.compile(r"[а-яА-ЯёЁ]")
 
@@ -68,7 +96,10 @@ def scan_file(file_path: Path, session: Session) -> None:
     try:
         if not file_path.suffix.lower() == ".mp3":
             return
-            
+
+        if _skip_transient_storage_path(file_path):
+            return
+
         # Check if file already indexed
         statement = select(Track).where(Track.local_path == str(file_path))
         existing = session.exec(statement).first()
@@ -167,13 +198,10 @@ def scan_library(library_path: str) -> None:
         return
 
     _logger.info("Starting library scan at %s", library_path)
-    from app.config import settings
-    cache_path = Path(settings.CACHE_DIR)
-    
+
     with Session(engine) as session:
         for file_path in library_dir.rglob("*.mp3"):
-            # Skip if file is inside the cache directory
-            if cache_path in file_path.parents:
+            if _skip_transient_storage_path(file_path):
                 continue
             scan_file(file_path, session)
     _logger.info("Library scan complete")

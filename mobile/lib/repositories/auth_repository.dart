@@ -64,16 +64,20 @@ class AuthRepository {
   }
 
   Future<User?> signIn() async {
-    // Existing Google Sign-In logic...
     try {
       final GoogleSignInAccount? account = await _googleSignIn.signIn();
       if (account == null) return null;
 
-      await account.authentication;
-      final String? serverAuthCode = account.serverAuthCode;
+      final GoogleSignInAuthentication auth = await account.authentication;
+      final String? idToken = auth.idToken;
+      if (idToken == null || idToken.isEmpty) return null;
 
-      final response = await apiClient.get(
-        '/auth/callback?code=$serverAuthCode',
+      // Backend verifies ID tokens (same flow as web GSI). Do not use
+      // /auth/callback here: server auth codes from the mobile SDK use a
+      // different redirect than GOOGLE_REDIRECT_URI, so token exchange fails.
+      final response = await apiClient.post(
+        '/auth/google',
+        body: {'id_token': idToken},
         authenticated: false,
       );
 
