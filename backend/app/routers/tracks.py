@@ -539,7 +539,7 @@ async def grant_stream_url(
     if not _valid_stream_track_id(tid):
         raise HTTPException(status_code=400, detail="Invalid track_id")
     statement = select(Track).where(or_(Track.id == tid, Track.remote_id == tid))
-    if not session.exec(statement).first():
+    if not session.exec(statement).first() and not _looks_like_youtube_video_id(tid):
         raise HTTPException(status_code=404, detail="Track not found")
     exp = int(time.time()) + settings.STREAM_URL_TTL_SECONDS
     sig = sign_stream_url(tid, exp, current_user.id)

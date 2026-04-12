@@ -201,6 +201,11 @@ window.playTrack = async (trackId, title, artist, thumbnail) => {
         audio.src = streamUrl;
         try {
             await audio.play();
+            if (trackId && typeof apiFetch === 'function') {
+                apiFetch(`/tracks/${encodeURIComponent(trackId)}/play`, {
+                    method: 'POST',
+                }).catch(() => {});
+            }
             if (playBtn) playBtn.innerHTML = '<i data-lucide="pause"></i>';
             PLAYER.updateMediaSession(state.currentTrack);
         } catch (err) {
