@@ -1,6 +1,9 @@
 """
 Import fully downloaded YouTube tracks into MUSIC_PATH (Artist/Album/track.mp3),
 with album.png, ID3 tags, and album_meta.json (who saved which track_id).
+
+Artist and album folders are resolved case-insensitively so case-sensitive hosts
+(e.g. Linux on Raspberry Pi) do not split the same act across ``Smokie`` vs ``SMOKIE``.
 """
 from __future__ import annotations
 
@@ -66,6 +69,36 @@ def sanitize_segment(name: Optional[str], max_len: int = 80) -> str:
         s = f"_{s}"
     s = s[:max_len].rstrip(". ") or "Unknown"
     return s
+
+
+def _resolve_library_subdir(parent: Path, segment: str) -> Path:
+    """
+    Pick a child directory under ``parent`` that matches ``segment`` case-insensitively,
+    or ``parent / segment`` if none exists. Linux (e.g. Raspberry Pi ext4) treats
+    ``Smokie`` and ``SMOKIE`` as different paths; this reuses the folder that is
+    already on disk so imports stay under one artist/album tree.
+    """
+    if not segment:
+        segment = "Unknown"
+    key = segment.casefold()
+    try:
+        if parent.is_dir():
+            for child in parent.iterdir():
+                if child.is_dir() and child.name.casefold() == key:
+                    if child.name != segment:
+                        _logger.info(
+                            "Library path: using existing %s (matched sanitized %r)",
+                            child,
+                            segment,
+                        )
+                    return child
+    except OSError:
+        _logger.warning(
+            "Could not scan %s for case-insensitive directory match",
+            parent,
+            exc_info=True,
+        )
+    return parent / segment
 
 
 def is_under_music_path(file_path: str) -> bool:
@@ -229,7 +262,10 @@ def _try_import_youtube_to_library_impl(
 
             lib_root = Path(settings.MUSIC_PATH)
             lib_root.mkdir(parents=True, exist_ok=True)
-            album_dir = lib_root / sanitize_segment(artist) / sanitize_segment(album)
+            artist_seg = sanitize_segment(artist)
+            album_seg = sanitize_segment(album)
+            artist_dir = _resolve_library_subdir(lib_root, artist_seg)
+            album_dir = _resolve_library_subdir(artist_dir, album_seg)
             album_dir.mkdir(parents=True, exist_ok=True)
 
             base_name = sanitize_segment(title)
