@@ -485,6 +485,46 @@ async def track_played(
     return {"status": "success", "play_count": activity.play_count}
 
 
+@router.post("/{track_id}/prefetch")
+@limiter.limit("120/minute")
+async def prefetch_track(
+    request: Request,
+    track_id: str,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """
+    Warm the temp cache for ``track_id`` in the background (Feature 2).
+
+    Safe to call while another play is in flight; dedup is handled inside the streamer.
+    Returns a short status string: ``cached`` | ``in_progress`` | ``started`` | ``skipped``.
+    Local tracks and non-YouTube rows are a no-op (``skipped``).
+    """
+    if not _valid_stream_track_id(track_id):
+        raise HTTPException(status_code=400, detail="Invalid track_id")
+
+    statement = select(Track).where(
+        or_(Track.id == track_id, Track.remote_id == track_id)
+    )
+    track = session.exec(statement).first()
+
+    remote_key: Optional[str] = None
+    if track is None:
+        if _looks_like_youtube_video_id(track_id):
+            remote_key = track_id
+    elif track.source_type == "youtube" and track.remote_id and _youtube_video_id_len_ok(track.remote_id):
+        remote_key = track.remote_id
+
+    if remote_key is None:
+        return {"status": "skipped"}
+
+    status = await streamer.prefetch_youtube(
+        remote_key,
+        library_user_id=current_user.id,
+    )
+    return {"status": status}
+
+
 @router.get("/liked")
 async def get_liked_tracks(
     session: Session = Depends(get_session),

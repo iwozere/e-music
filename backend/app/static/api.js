@@ -78,6 +78,9 @@ const API = {
     toggleLike: (trackId, isLiked) =>
         apiFetch(`/tracks/${trackId}/like?is_liked=${!isLiked}`, { method: 'POST' }),
 
+    prefetch: (trackId) =>
+        apiFetch(`/tracks/${encodeURIComponent(trackId)}/prefetch`, { method: 'POST' }),
+
     getPlaylists: () => apiFetch('/playlists'),
 
     getPlaylistTracks: (playlistId) => apiFetch(`/playlists/${playlistId}/tracks`),

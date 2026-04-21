@@ -225,6 +225,16 @@ def try_import_youtube_to_library(
     if not user_id or not remote_id or not source_mp3_path:
         return
 
+    # The library layout + ID3 tagging path is MP3-only (mutagen.mp3). The streamer's
+    # passthrough pipeline may now produce .webm/.aac artifacts; skip library import for
+    # those — the cache still serves them, they just don't land in the Artist/Album tree.
+    ext = os.path.splitext(source_mp3_path)[1].lower()
+    if ext != ".mp3":
+        _logger.debug(
+            "library_import: skipping non-mp3 source for %s (ext=%s)", remote_id, ext
+        )
+        return
+
     with _lock_for_remote(remote_id):
         _try_import_youtube_to_library_impl(
             user_id=user_id,

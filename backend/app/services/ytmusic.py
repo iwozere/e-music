@@ -42,13 +42,13 @@ def search_youtube(query: str, limit: int = 20) -> List[Dict]:
             formatted_results.append({
                 "id": item.get("videoId"),
                 "title": item.get("title"),
-                "artist": ", ".join([a.get("name") for a in item.get("artists", [])]),
-                "album": item.get("album", {}).get("name"),
+                "artist": ", ".join([a.get("name") for a in (item.get("artists") or [])]),
+                "album": (item.get("album") or {}).get("name"),
                 "duration": item.get("duration_seconds"),
                 "source_type": "youtube",
                 "remote_id": item.get("videoId"),
                 "is_cached": False,  # Checked against DB in main search logic
-                "thumbnail": item.get("thumbnails", [{}])[-1].get("url")
+                "thumbnail": (item.get("thumbnails") or [{}])[-1].get("url")
             })
         return formatted_results
     except Exception:

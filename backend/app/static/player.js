@@ -87,6 +87,66 @@ const PLAYER = {
 
 window.PLAYER = PLAYER;
 
+/**
+ * Feature 2 (prefetch): warm the server-side cache for whatever the user is most
+ * likely to hit next. Scheduled ~3s after a track starts so it doesn't fight the
+ * live playback's warm-up; superseded on every new playTrack() call.
+ */
+const PREFETCH = {
+    _timer: null,
+    _inFlight: null,
+
+    _predictNextId() {
+        if (state?.queue?.length > 0) {
+            return trackPlaybackId(state.queue[0]);
+        }
+        const ctx = state?.currentTracksContext || [];
+        if (ctx.length === 0) return null;
+        let nextIndex = (state.currentTrackIndex ?? -1) + 1;
+        if (nextIndex >= ctx.length) nextIndex = 0;
+        const next = ctx[nextIndex];
+        if (!next) return null;
+        const id = trackPlaybackId(next);
+        return id === trackPlaybackId(state.currentTrack) ? null : id;
+    },
+
+    cancel() {
+        if (this._timer) {
+            clearTimeout(this._timer);
+            this._timer = null;
+        }
+        if (this._inFlight) {
+            try { this._inFlight.abort(); } catch (_) { /* ignore */ }
+            this._inFlight = null;
+        }
+    },
+
+    schedule() {
+        this.cancel();
+        if (typeof API === 'undefined' || !API.prefetch) return;
+        // navigator.connection is not on all browsers; bail out on "save data" when present.
+        const conn = navigator.connection;
+        if (conn && conn.saveData) return;
+
+        this._timer = setTimeout(() => {
+            this._timer = null;
+            const nextId = this._predictNextId();
+            if (!nextId) return;
+            API.prefetch(nextId).then((res) => {
+                if (res && res.ok) {
+                    res.json().then((body) => {
+                        if (body && body.status) {
+                            console.log('[Prefetch]', nextId, '→', body.status);
+                        }
+                    }).catch(() => { /* ignore */ });
+                }
+            }).catch(() => { /* ignore network errors, best-effort */ });
+        }, 3000);
+    },
+};
+
+window.PREFETCH = PREFETCH;
+
 /** After a failed <audio> load, fetch the same signed URL once to read FastAPI JSON `detail` (503). */
 async function fetchStreamErrorDetail(url) {
     try {
@@ -199,6 +259,7 @@ window.playTrack = async (trackId, title, artist, thumbnail) => {
         streamUrl = coerceStreamUrlToPageHttps(streamUrl);
         console.log("[Player] Setting audio source (signed URL)");
         audio.src = streamUrl;
+        PREFETCH.cancel();
         try {
             await audio.play();
             if (trackId && typeof apiFetch === 'function') {
@@ -208,6 +269,7 @@ window.playTrack = async (trackId, title, artist, thumbnail) => {
             }
             if (playBtn) playBtn.innerHTML = '<i data-lucide="pause"></i>';
             PLAYER.updateMediaSession(state.currentTrack);
+            PREFETCH.schedule();
         } catch (err) {
             const code = audio.error ? audio.error.code : '';
             console.warn("[Player] Playback failed:", err.message, 'mediaError=', code);

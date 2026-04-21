@@ -37,10 +37,34 @@ class Settings(BaseSettings):
     # YouTube / yt-dlp: datacenter IPs are often blocked with the default web client;
     # optional Netscape cookies.txt helps. Extra args: streamer._build_yt_dlp_argv.
     YTDLP_COOKIES_FILE: Optional[str] = None
-    # Comma-separated yt-dlp YouTube clients (youtube:player_client=...). Avoid leading
-    # with "android" unless you supply a PO token (yt-dlp YouTube docs).
-    YTDLP_YOUTUBE_PLAYER_CLIENT: str = "tv_embedded,web,mweb"
+    # Comma-separated yt-dlp YouTube clients (youtube:player_client=...). The old
+    # "tv_embedded" default was removed from yt-dlp in 2025; "tv" is its replacement.
+    # "web" needs a JS runtime (Deno or Node 20+) in PATH to solve signature/n challenges.
+    # Avoid leading with "android" unless you supply a PO token (yt-dlp YouTube docs).
+    YTDLP_YOUTUBE_PLAYER_CLIENT: str = "tv,web,mweb"
     YTDLP_EXTRA_ARGS: str = ""
+
+    # --- Streaming pipeline tuning (Feature 1: fast YouTube playback) ---
+    # Low-latency ffmpeg flags (nobuffer, low_delay) + small analyzeduration/probesize.
+    STREAM_LOW_LATENCY: bool = True
+    # Pass-through (stream-copy) audio when the source codec is browser-safe (opus/aac).
+    # When False, audio is transcoded to MP3 (legacy behavior, higher CPU + slower first byte).
+    STREAM_PASSTHROUGH: bool = True
+    # ffmpeg probe window (microseconds / bytes). The pre-existing default was 10_000_000.
+    STREAM_ANALYZEDURATION_US: int = 500_000
+    STREAM_PROBESIZE_BYTES: int = 500_000
+    # Bitrate used only when transcode fallback path runs.
+    STREAM_TRANSCODE_BITRATE_KBPS: int = 128
+    # Resolved direct-URL cache TTL for the yt-dlp Python-API resolver. googlevideo URLs
+    # typically live ~6h; keep our TTL well under that and re-resolve on 403/410.
+    YTDLP_RESOLVED_URL_TTL_SEC: int = 18_000
+    # Emergency kill-switch: force the legacy subprocess pipeline even when the resolver is up.
+    STREAM_FORCE_LEGACY_SUBPROCESS: bool = False
+
+    # --- Prefetch / warm-cache (Feature 2: zero-latency next-track playback) ---
+    PREFETCH_ENABLED: bool = True
+    # Upper bound on concurrent prefetch jobs server-wide; guards the Pi's CPU/network.
+    PREFETCH_MAX_CONCURRENT: int = 2
 
     @classmethod
     def strip_variables(cls, values: dict) -> dict:
