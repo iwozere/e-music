@@ -211,16 +211,25 @@ def test_phase_recorder_captures_js_runtime_and_po_token_phases():
     assert not any(n.startswith("misc:") for n in names), names
 
 
-def test_phase_recorder_catchall_buckets_unknown_downloads():
-    """Unknown ``Downloading X`` lines still get timed as ``misc:<slug>``."""
+def test_phase_recorder_catchall_buckets_unknown_verbs():
+    """Unknown ``<verb> <slug>`` lines still get timed as ``misc:<verb>:<slug>``."""
     rec = yt_resolver._PhaseRecorder(video_id="VID")  # noqa: SLF001
-    rec.info("[youtube] VID: Downloading webpage")               # known
-    rec.info("[youtube] VID: Downloading brand_new_phase")       # unknown
-    rec.info("[youtube] VID: Downloading brand_new_phase")       # duplicate — dropped
-    rec.info("[youtube] VID: Downloading another_mystery")       # unknown #2
+    rec.info("[youtube] VID: Downloading webpage")                    # known -> webpage
+    rec.info("[youtube] VID: Downloading brand_new_phase")            # misc:downloading:brand_new_phase
+    rec.info("[youtube] VID: Downloading brand_new_phase")            # duplicate -> dropped
+    # Neutral wording (no ``yt-dlp-ejs`` / ``Deno`` / ``EJS`` — those hit the
+    # specific ``ejs`` pattern). These emulate what a bare ``[youtube]`` or
+    # future plugin might print while computing anti-bot tokens.
+    rec.info("[youtube] VID: Running botguard challenge")             # misc:running:botguard
+    rec.info("[youtube] VID: Solving integrity_token")                # misc:solving:integrity_token
 
     names = [ev.name for ev in rec.events]
-    assert names == ["webpage", "misc:brand_new_phase", "misc:another_mystery"]
+    assert names == [
+        "webpage",
+        "misc:downloading:brand_new_phase",
+        "misc:running:botguard",
+        "misc:solving:integrity_token",
+    ]
 
 
 def test_phase_recorder_tolerates_non_string_input():

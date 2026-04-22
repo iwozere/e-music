@@ -91,13 +91,16 @@ class _PhaseRecorder:
         ("format_select", re.compile(r"Downloading\s+\d+\s+format",                re.I), None),
     ]
 
-    # Safety-net: any ``Downloading <thing>`` message that didn't match a
-    # specific pattern still shows up in the timing string as ``misc:<thing>``,
-    # so future yt-dlp string changes don't silently re-introduce unexplained
-    # multi-second gaps. We intentionally match only "Downloading" (not the
-    # chattier "Extracting"/"Decrypting") to keep the bucket small.
+    # Safety-net: any unknown ``<Verb> <thing>`` message still shows up in the
+    # timing string as ``misc:<verb>:<thing>``. The verb list covers everything
+    # yt-dlp / yt-dlp-ejs typically prints during a resolve; the slug is the
+    # first word after the verb (lower-cased, truncated) so future yt-dlp
+    # string changes cannot silently re-introduce unexplained multi-second
+    # gaps between two named phases.
     _CATCHALL: "re.Pattern[str]" = re.compile(
-        r"Downloading\s+([A-Za-z][A-Za-z0-9_\-]{1,31})",
+        r"\b(?P<verb>Downloading|Extracting|Decrypting|Deciphering|Testing|"
+        r"Fetching|Running|Solving|Computing|Loading|Executing|Building|"
+        r"Parsing|Generating)\s+(?P<slug>[A-Za-z][A-Za-z0-9_\-]{1,31})",
         re.I,
     )
 
@@ -131,13 +134,17 @@ class _PhaseRecorder:
             return
 
         # No specific pattern matched — try the safety-net catch-all so we
-        # still time unknown "Downloading X" messages. Bucketed as
-        # ``misc:<slug>`` with the captured word lower-cased for stable keys.
+        # still time unknown "<verb> <slug>" messages. Bucketed as
+        # ``misc:<verb>:<slug>`` (both lower-cased) so the verb hints at
+        # whether this is a network fetch, a CPU-bound decrypt, a JS
+        # runtime call, etc. — useful when diagnosing which yt-dlp-ejs step
+        # is dominating the resolve.
         cm = self._CATCHALL.search(msg)
         if cm:
-            slug = (cm.group(1) or "").lower()
-            if slug:
-                self._record_event(f"misc:{slug}")
+            verb = (cm.group("verb") or "").lower()
+            slug = (cm.group("slug") or "").lower()
+            if verb and slug:
+                self._record_event(f"misc:{verb}:{slug}")
 
     def _record_event(self, key: str) -> None:
         if key in self._seen_keys:
