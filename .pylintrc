@@ -1,2 +1,8 @@
+[MASTER]
+# The `app` package lives under `backend/` in this repo, so Pylint (which runs
+# from the workspace root) needs that directory on sys.path to resolve
+# `from app.services...` imports in backend modules and tests.
+init-hook='import sys, pathlib; sys.path.insert(0, str(pathlib.Path(".").resolve() / "backend"))'
+
 [FORMAT]
 max-line-length=180

@@ -13,17 +13,162 @@ caller can fall back to the legacy subprocess pipeline in ``streamer.py``.
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import random
+import re
 import shlex
 import threading
 import time
 from dataclasses import dataclass
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from app.config import settings
 from app.utils.logger import setup_logger
 
 _logger = setup_logger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Phase timing instrumentation
+# ---------------------------------------------------------------------------
+# yt-dlp emits a stream of short messages as it walks through the YouTube
+# extraction pipeline ("Downloading webpage", "Downloading tv client config",
+# "Downloading tv player API JSON", "Decrypting signature", ...). We intercept
+# those via yt-dlp's ``logger`` option and record the monotonic-ms offset at
+# which each *first* occurrence was observed. The resulting list lets us see
+# which phase is actually dominating the ~10 s cold-miss on the Pi.
+#
+# A shared ``_DispatchLogger`` is installed on the singleton ``YoutubeDL``
+# instance; per-call ``_PhaseRecorder``s are dispatched via a contextvar so
+# concurrent resolves don't stomp on each other.
+
+
+@dataclass
+class _PhaseEvent:
+    name: str   # e.g. "webpage", "client_cfg:tv", "signature"
+    ms: int     # offset in ms from resolve start
+
+
+class _PhaseRecorder:
+    """Per-resolve sink for yt-dlp's info/debug/warning messages.
+
+    Records only the *first* occurrence of each known phase to keep the log
+    line short. Unknown messages are ignored.
+    """
+
+    # Ordered list of (base_name, regex, client_capture_group_or_None).
+    # The first match wins, so put more specific patterns before generic ones.
+    _PATTERNS: List[Tuple[str, "re.Pattern[str]", Optional[int]]] = [
+        ("webpage",     re.compile(r"Downloading webpage",                      re.I), None),
+        ("player_js",   re.compile(r"Downloading player\s+\S+\.js",             re.I), None),
+        ("client_cfg",  re.compile(r"Downloading (\w+) client config",          re.I), 1),
+        ("player_api",  re.compile(r"Downloading (\w+) player API JSON",        re.I), 1),
+        ("signature",   re.compile(r"(?:Decrypt|Decipher|Extract)\w*\s+signature", re.I), None),
+        ("n_challenge", re.compile(r"\bn[-\s]?(?:challenge|decipher|transform|sig)", re.I), None),
+    ]
+
+    def __init__(self, *, video_id: str) -> None:
+        self.video_id = video_id
+        self._t0 = time.monotonic()
+        self._events: List[_PhaseEvent] = []
+        self._seen_keys: set[str] = set()
+        self._clients: List[str] = []
+
+    def _ms(self) -> int:
+        return int((time.monotonic() - self._t0) * 1000)
+
+    def _record_message(self, msg: Any) -> None:
+        if not isinstance(msg, str) or not msg:
+            return
+        for base, pat, client_group in self._PATTERNS:
+            m = pat.search(msg)
+            if not m:
+                continue
+            client: Optional[str] = None
+            if client_group is not None:
+                try:
+                    client = (m.group(client_group) or "").lower() or None
+                except (IndexError, re.error):
+                    client = None
+            if client and client not in self._clients:
+                self._clients.append(client)
+            key = f"{base}:{client}" if client else base
+            if key in self._seen_keys:
+                return  # first-occurrence-only
+            self._seen_keys.add(key)
+            try:
+                self._events.append(_PhaseEvent(name=key, ms=self._ms()))
+            except Exception:  # pylint: disable=broad-exception-caught
+                pass
+            return
+
+    # yt-dlp logger protocol -------------------------------------------------
+    def debug(self, msg: Any) -> None:     # noqa: D401 — protocol method
+        self._record_message(msg)
+
+    def info(self, msg: Any) -> None:      # noqa: D401
+        self._record_message(msg)
+
+    def warning(self, msg: Any) -> None:   # noqa: D401
+        self._record_message(msg)
+
+    def error(self, msg: Any) -> None:     # noqa: D401
+        # Errors surface as exceptions from ``extract_info``; no need to record.
+        return
+
+    # Consumer ---------------------------------------------------------------
+    @property
+    def events(self) -> List[_PhaseEvent]:
+        return list(self._events)
+
+    @property
+    def clients(self) -> List[str]:
+        return list(self._clients)
+
+
+_recorder_ctx: contextvars.ContextVar[Optional[_PhaseRecorder]] = contextvars.ContextVar(
+    "_yt_resolver_recorder", default=None
+)
+
+
+class _DispatchLogger:
+    """yt-dlp logger that forwards every message to the current context's recorder.
+
+    Installed once on the singleton ``YoutubeDL``; ``_PhaseRecorder`` instances
+    come and go via ``_recorder_ctx``. If no recorder is bound (unexpected),
+    messages are dropped silently — yt-dlp itself still honours ``quiet`` for
+    stderr output, so nothing leaks either way.
+    """
+
+    def debug(self, msg: Any) -> None:
+        r = _recorder_ctx.get()
+        if r is not None:
+            r.debug(msg)
+
+    def info(self, msg: Any) -> None:
+        r = _recorder_ctx.get()
+        if r is not None:
+            r.info(msg)
+
+    def warning(self, msg: Any) -> None:
+        r = _recorder_ctx.get()
+        if r is not None:
+            r.warning(msg)
+
+    def error(self, msg: Any) -> None:
+        r = _recorder_ctx.get()
+        if r is not None:
+            r.error(msg)
+
+
+_dispatch_logger = _DispatchLogger()
+
+
+def _fmt_timing(events: List[_PhaseEvent]) -> str:
+    if not events:
+        return ""
+    # e.g. "webpage@180,client_cfg:tv@260,player_api:tv@3500"
+    return ",".join(f"{ev.name}@{ev.ms}" for ev in events)
 
 
 @dataclass(frozen=True)
@@ -77,6 +222,9 @@ def _build_ydl_opts() -> Dict[str, Any]:
         "no_warnings": True,
         "skip_download": True,
         "extractor_args": {"youtube": {"player_client": clients.split(",")}},
+        # Route yt-dlp's chatty extractor messages into our phase recorder so
+        # the resolver log line can break the ~10 s cold-miss into phases.
+        "logger": _dispatch_logger,
     }
     cookies = (settings.YTDLP_COOKIES_FILE or "").strip()
     if cookies:
@@ -219,21 +367,40 @@ async def resolve(video_id: str, *, force_refresh: bool = False) -> Optional[Res
     if not force_refresh:
         cached = _peek_cache(video_id)
         if cached is not None:
+            ttl_remaining = max(0, int(cached.expires_at - time.monotonic()))
+            _logger.debug(
+                "yt_resolver: hit video_id=%s ttl_remaining_s=%d", video_id, ttl_remaining
+            )
             return cached
 
+    recorder = _PhaseRecorder(video_id=video_id)
+    token = _recorder_ctx.set(recorder)
     t0 = time.monotonic()
-    resolved = await asyncio.to_thread(_resolve_sync, video_id)
+    try:
+        resolved = await asyncio.to_thread(_resolve_sync, video_id)
+    finally:
+        _recorder_ctx.reset(token)
     elapsed_ms = int((time.monotonic() - t0) * 1000)
+
+    timing = _fmt_timing(recorder.events)
+    clients = ",".join(recorder.clients) if recorder.clients else ""
+    extras: List[str] = ["cache=miss"]
+    if clients:
+        extras.append(f"clients={clients}")
+    if timing:
+        extras.append(f"timing={timing}")
+    extras_str = " ".join(extras)
+
     if resolved is None:
-        _logger.info("yt_resolver: miss video_id=%s elapsed_ms=%d", video_id, elapsed_ms)
+        _logger.info(
+            "yt_resolver: miss video_id=%s elapsed_ms=%d %s",
+            video_id, elapsed_ms, extras_str,
+        )
         return None
 
     _store_cache(resolved)
     _logger.info(
-        "yt_resolver: resolved video_id=%s ext=%s acodec=%s elapsed_ms=%d",
-        video_id,
-        resolved.ext,
-        resolved.acodec,
-        elapsed_ms,
+        "yt_resolver: resolved video_id=%s ext=%s acodec=%s elapsed_ms=%d %s",
+        video_id, resolved.ext, resolved.acodec, elapsed_ms, extras_str,
     )
     return resolved
