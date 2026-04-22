@@ -58,14 +58,44 @@ class _PhaseRecorder:
 
     # Ordered list of (base_name, regex, client_capture_group_or_None).
     # The first match wins, so put more specific patterns before generic ones.
+    # Anything that doesn't match falls through to ``_CATCHALL`` below so we
+    # still time unknown "Downloading X" messages as ``misc:X``.
     _PATTERNS: List[Tuple[str, "re.Pattern[str]", Optional[int]]] = [
-        ("webpage",     re.compile(r"Downloading webpage",                      re.I), None),
-        ("player_js",   re.compile(r"Downloading player\s+\S+\.js",             re.I), None),
-        ("client_cfg",  re.compile(r"Downloading (\w+) client config",          re.I), 1),
-        ("player_api",  re.compile(r"Downloading (\w+) player API JSON",        re.I), 1),
-        ("signature",   re.compile(r"(?:Decrypt|Decipher|Extract)\w*\s+signature", re.I), None),
-        ("n_challenge", re.compile(r"\bn[-\s]?(?:challenge|decipher|transform|sig)", re.I), None),
+        # ---- initial page + iframe API ----
+        ("webpage",       re.compile(r"Downloading webpage",                       re.I), None),
+        ("iframe_api",    re.compile(r"Downloading iframe API",                    re.I), None),
+        # ---- per-client endpoints ----
+        ("client_cfg",    re.compile(r"Downloading (\w+) client config",           re.I), 1),
+        ("player_api",    re.compile(r"Downloading (\w+) player API JSON",         re.I), 1),
+        ("initial_data",  re.compile(r"Downloading initial data",                  re.I), None),
+        # ---- player JS + JS challenges (signature & n-sig) ----
+        ("player_js",     re.compile(r"Downloading player\s+\S+\.js",              re.I), None),
+        ("signature",     re.compile(r"(?:Decrypt|Decipher|Extract)\w*\s+signature", re.I), None),
+        # "Extracting n function", "Downloading n function code", "Testing n
+        # function", "Decrypting nsig", "n-challenge", ... — all bucketed as
+        # ``nsig`` since the cost is one logical JS-runtime round-trip.
+        ("nsig",          re.compile(
+            r"\bn[-\s_]?(?:challenge|decipher|transform|sig)\b"
+            r"|(?:Downloading|Extracting|Testing|Decrypting|Deciphering)\s+n(?:sig)?\s+function",
+            re.I,
+        ), None),
+        # ---- PO token (yt-dlp-ejs / pot plugins) ----
+        ("po_token",      re.compile(r"\bPO[-\s_]?Token\b|Fetching\s+PO\b",        re.I), None),
+        # ---- JS runtime / EJS (yt-dlp-ejs emits these when it invokes Deno) ----
+        ("ejs",           re.compile(r"\b(?:yt-dlp-ejs|EJS)\b|\bDeno\b|\bNode\.?js\b", re.I), None),
+        # ---- final format selection (emitted by YoutubeDL itself) ----
+        ("format_select", re.compile(r"Downloading\s+\d+\s+format",                re.I), None),
     ]
+
+    # Safety-net: any ``Downloading <thing>`` message that didn't match a
+    # specific pattern still shows up in the timing string as ``misc:<thing>``,
+    # so future yt-dlp string changes don't silently re-introduce unexplained
+    # multi-second gaps. We intentionally match only "Downloading" (not the
+    # chattier "Extracting"/"Decrypting") to keep the bucket small.
+    _CATCHALL: "re.Pattern[str]" = re.compile(
+        r"Downloading\s+([A-Za-z][A-Za-z0-9_\-]{1,31})",
+        re.I,
+    )
 
     def __init__(self, *, video_id: str) -> None:
         self.video_id = video_id
@@ -93,14 +123,26 @@ class _PhaseRecorder:
             if client and client not in self._clients:
                 self._clients.append(client)
             key = f"{base}:{client}" if client else base
-            if key in self._seen_keys:
-                return  # first-occurrence-only
-            self._seen_keys.add(key)
-            try:
-                self._events.append(_PhaseEvent(name=key, ms=self._ms()))
-            except Exception:  # pylint: disable=broad-exception-caught
-                pass
+            self._record_event(key)
             return
+
+        # No specific pattern matched — try the safety-net catch-all so we
+        # still time unknown "Downloading X" messages. Bucketed as
+        # ``misc:<slug>`` with the captured word lower-cased for stable keys.
+        cm = self._CATCHALL.search(msg)
+        if cm:
+            slug = (cm.group(1) or "").lower()
+            if slug:
+                self._record_event(f"misc:{slug}")
+
+    def _record_event(self, key: str) -> None:
+        if key in self._seen_keys:
+            return  # first-occurrence-only
+        self._seen_keys.add(key)
+        try:
+            self._events.append(_PhaseEvent(name=key, ms=self._ms()))
+        except Exception:  # pylint: disable=broad-exception-caught
+            pass
 
     # yt-dlp logger protocol -------------------------------------------------
     def debug(self, msg: Any) -> None:     # noqa: D401 — protocol method

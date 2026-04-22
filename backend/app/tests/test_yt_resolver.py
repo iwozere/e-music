@@ -175,11 +175,48 @@ def test_phase_recorder_deduplicates_and_ignores_unknown():
     rec = yt_resolver._PhaseRecorder(video_id="VID")  # noqa: SLF001
     rec.info("[youtube] VID: Downloading webpage")
     rec.info("[youtube] VID: Downloading webpage")  # duplicate — should be ignored
-    rec.debug("unrelated chatter from some plugin")
+    rec.debug("unrelated chatter from some plugin")  # no Downloading/etc. — ignored
 
     names = [ev.name for ev in rec.events]
     assert names == ["webpage"]
     assert rec.clients == []
+
+
+def test_phase_recorder_captures_js_runtime_and_po_token_phases():
+    """Covers the ~8 s gap that used to follow ``player_api:mweb``."""
+    rec = yt_resolver._PhaseRecorder(video_id="VID")  # noqa: SLF001
+    messages = [
+        "[youtube] VID: Downloading player abc123.js",
+        "[youtube] VID: Extracting signature function",
+        "[youtube] VID: Decrypting signature",
+        "[youtube] VID: Extracting n function",
+        "[youtube] VID: Testing n function with player response",
+        "[youtube] VID: Fetching PO token",
+        "[debug] yt-dlp-ejs: loading JS runtime (Deno)",
+        "[info] VID: Downloading 1 format(s): 140",
+    ]
+    for m in messages:
+        rec.info(m)
+
+    names = [ev.name for ev in rec.events]
+    assert "player_js" in names
+    assert "signature" in names
+    assert "nsig" in names
+    assert "po_token" in names
+    assert "ejs" in names
+    assert "format_select" in names
+
+
+def test_phase_recorder_catchall_buckets_unknown_downloads():
+    """Unknown ``Downloading X`` lines still get timed as ``misc:<slug>``."""
+    rec = yt_resolver._PhaseRecorder(video_id="VID")  # noqa: SLF001
+    rec.info("[youtube] VID: Downloading webpage")               # known
+    rec.info("[youtube] VID: Downloading brand_new_phase")       # unknown
+    rec.info("[youtube] VID: Downloading brand_new_phase")       # duplicate — dropped
+    rec.info("[youtube] VID: Downloading another_mystery")       # unknown #2
+
+    names = [ev.name for ev in rec.events]
+    assert names == ["webpage", "misc:brand_new_phase", "misc:another_mystery"]
 
 
 def test_phase_recorder_tolerates_non_string_input():
