@@ -35,3 +35,10 @@ backend/app/db/*.db
 backend/app/cache/*
 !backend/app/cache/.gitkeep
 /share/e-music/
+
+# Secrets — yt-dlp session cookies (never commit)
+cookies.txt
+
+# Logs
+backend/logs/*
+!backend/logs/.gitkeep

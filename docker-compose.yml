@@ -13,6 +13,7 @@ services:
       - ${MUSIC_HOST_ROOT:-${MUSIC_PATH}}/cache:/app/cache
       - ${MUSIC_HOST_ROOT:-${MUSIC_PATH}}/db:/app/db
       - ./backend/app:/app/app
+      - ./cookies.txt:/app/cookies.txt:ro
     env_file: .env
     # Inside the container paths must match the volume targets above (do not use host paths here).
     environment:
