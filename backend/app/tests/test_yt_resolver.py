@@ -186,7 +186,9 @@ def test_phase_recorder_captures_js_runtime_and_po_token_phases():
     """Covers the ~8 s gap that used to follow ``player_api:mweb``."""
     rec = yt_resolver._PhaseRecorder(video_id="VID")  # noqa: SLF001
     messages = [
-        "[youtube] VID: Downloading player abc123.js",
+        # Newer yt-dlp drops the ``.js`` suffix — both forms must classify as
+        # ``player_js`` (otherwise it falls through to ``misc:player``).
+        "[youtube] VID: Downloading player abc123",
         "[youtube] VID: Extracting signature function",
         "[youtube] VID: Decrypting signature",
         "[youtube] VID: Extracting n function",
@@ -205,6 +207,8 @@ def test_phase_recorder_captures_js_runtime_and_po_token_phases():
     assert "po_token" in names
     assert "ejs" in names
     assert "format_select" in names
+    # The catch-all must NOT have fired for ``Downloading player abc123``.
+    assert not any(n.startswith("misc:") for n in names), names
 
 
 def test_phase_recorder_catchall_buckets_unknown_downloads():

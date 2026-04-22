@@ -69,7 +69,11 @@ class _PhaseRecorder:
         ("player_api",    re.compile(r"Downloading (\w+) player API JSON",         re.I), 1),
         ("initial_data",  re.compile(r"Downloading initial data",                  re.I), None),
         # ---- player JS + JS challenges (signature & n-sig) ----
-        ("player_js",     re.compile(r"Downloading player\s+\S+\.js",              re.I), None),
+        # Matches both "Downloading player abc123.js" (older yt-dlp) and plain
+        # "Downloading player abc123" (newer yt-dlp, no extension). This is
+        # placed after ``player_api`` above so "Downloading tv player API JSON"
+        # is not misclassified here.
+        ("player_js",     re.compile(r"Downloading player\s+\S+",                  re.I), None),
         ("signature",     re.compile(r"(?:Decrypt|Decipher|Extract)\w*\s+signature", re.I), None),
         # "Extracting n function", "Downloading n function code", "Testing n
         # function", "Decrypting nsig", "n-challenge", ... — all bucketed as
