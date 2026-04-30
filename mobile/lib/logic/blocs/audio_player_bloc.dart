@@ -152,6 +152,11 @@ class AudioPlayerBloc extends Bloc<AudioPlayerEvent, AudioPlayerState> {
   // Checked synchronously in the stream listener (before BLoC state can update).
   bool _aiShufflePending = false;
 
+  // True while PlayPlaylistEvent is loading new sources. Prevents _UpdateCurrentTrack
+  // from calling play() during the load (which would race with PlayPlaylistEvent's own
+  // play() and produce two concurrent stream requests for the same track).
+  bool _playlistLoading = false;
+
   AudioPlayer get _audioPlayer => audioHandler.player;
 
   AudioPlayerBloc({
@@ -231,10 +236,12 @@ class AudioPlayerBloc extends Bloc<AudioPlayerEvent, AudioPlayerState> {
 
     on<PlayPlaylistEvent>((event, emit) async {
       if (event.tracks.isEmpty) return;
-      // Hold the shuffle guard while we stop the old player and load new sources.
-      // audioHandler.stop() briefly puts the player in `completed` state which would
-      // otherwise re-trigger TriggerAiShuffleEvent before the new playlist is ready.
+      // Hold both guards while we stop the old player and load new sources:
+      // • _aiShufflePending: stop() briefly emits `completed` which would re-trigger AI shuffle
+      // • _playlistLoading: prevents _UpdateCurrentTrack from calling play() during load,
+      //   which would race with our own play() and produce duplicate stream requests.
       _aiShufflePending = true;
+      _playlistLoading = true;
       // Queue is updated again after URL resolution to reflect any dropped tracks
       emit(state.copyWith(queue: event.tracks, errorMessage: null));
       try {
@@ -313,6 +320,7 @@ class AudioPlayerBloc extends Bloc<AudioPlayerEvent, AudioPlayerState> {
         _loggerError('Error playing playlist: $e');
         emit(state.copyWith(errorMessage: 'Playback error: $e'));
       } finally {
+        _playlistLoading = false;
         _aiShufflePending = false;
       }
     });
@@ -447,10 +455,13 @@ class AudioPlayerBloc extends Bloc<AudioPlayerEvent, AudioPlayerState> {
 
     on<_UpdateCurrentTrack>((event, emit) async {
       emit(state.copyWith(currentTrack: event.track));
-      // Do NOT call audioHandler.play() here — just_audio advances playback
-      // automatically when the index changes within a loaded playlist.
-      // An extra play() races with PlayPlaylistEvent's play() and causes
-      // two concurrent stream requests for the same track, stalling the buffer.
+      // Re-trigger play() when advancing between tracks, but not while
+      // PlayPlaylistEvent is still loading sources (_playlistLoading guard).
+      // Without this call some Android setups pause between tracks.
+      if (state.isPlaying && !_playlistLoading) {
+        await Future.delayed(const Duration(milliseconds: 300));
+        audioHandler.play();
+      }
     });
 
     on<_HandlePlaybackError>((event, emit) {
