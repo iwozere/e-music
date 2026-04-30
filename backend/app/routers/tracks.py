@@ -5,6 +5,7 @@ import os
 import time
 from datetime import datetime, timezone
 from typing import Any, List, NamedTuple, Optional, Set
+from uuid import uuid4
 from urllib.parse import quote
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
@@ -724,6 +725,37 @@ async def ai_shuffle(
         raise HTTPException(status_code=503, detail="AI shuffle unavailable — check GROQ_API_KEY")
 
     tracks = await resolve_suggestions_to_tracks(suggestions)
+
+    # Upsert AI shuffle results into the DB so the next auto-shuffle call can
+    # find them via Track.remote_id lookup (they aren't in the DB yet because
+    # they come straight from YouTube Music search).
+    for td in tracks:
+        rid = td.get("remote_id") or td.get("id")
+        if not rid:
+            continue
+        existing = session.exec(select(Track).where(Track.remote_id == rid)).first()
+        if existing:
+            td["id"] = existing.id
+        else:
+            new_t = Track(
+                id=str(uuid4()),
+                title=td.get("title", "Unknown"),
+                artist=td.get("artist"),
+                album=td.get("album"),
+                source_type="youtube",
+                remote_id=rid,
+                thumbnail=td.get("thumbnail"),
+                duration=td.get("duration"),
+                added_at=datetime.now(timezone.utc),
+            )
+            session.add(new_t)
+            td["id"] = new_t.id
+    try:
+        session.commit()
+    except Exception:
+        session.rollback()
+        _logger.warning("Failed to upsert AI shuffle tracks to DB")
+
     return tracks
 
 
