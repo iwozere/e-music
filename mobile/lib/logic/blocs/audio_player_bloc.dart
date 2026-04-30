@@ -447,10 +447,10 @@ class AudioPlayerBloc extends Bloc<AudioPlayerEvent, AudioPlayerState> {
 
     on<_UpdateCurrentTrack>((event, emit) async {
       emit(state.copyWith(currentTrack: event.track));
-      if (state.isPlaying) {
-        await Future.delayed(const Duration(milliseconds: 300));
-        audioHandler.play();
-      }
+      // Do NOT call audioHandler.play() here — just_audio advances playback
+      // automatically when the index changes within a loaded playlist.
+      // An extra play() races with PlayPlaylistEvent's play() and causes
+      // two concurrent stream requests for the same track, stalling the buffer.
     });
 
     on<_HandlePlaybackError>((event, emit) {
