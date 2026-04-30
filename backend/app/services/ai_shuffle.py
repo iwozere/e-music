@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 from typing import Dict, List
 
 import httpx
@@ -65,7 +66,20 @@ async def get_ai_suggestions(tracks: List[Dict]) -> List[Dict[str, str]]:
                     line for line in lines if not line.startswith("```")
                 ).strip()
 
-            suggestions = json.loads(content)
+            # Try strict parse first; fall back to regex extraction of the
+            # [...] block so minor LLM formatting issues (trailing commas,
+            # extra trailing text) don't abort the whole shuffle.
+            suggestions = None
+            try:
+                suggestions = json.loads(content)
+            except json.JSONDecodeError:
+                m = re.search(r'\[[\s\S]*\]', content)
+                if m:
+                    try:
+                        suggestions = json.loads(m.group())
+                    except json.JSONDecodeError:
+                        _logger.warning("Groq response JSON unparseable even after extraction")
+
             if isinstance(suggestions, list):
                 return [
                     s for s in suggestions
