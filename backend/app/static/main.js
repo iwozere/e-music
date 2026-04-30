@@ -552,8 +552,11 @@ window.triggerAiShuffle = async () => {
         }
         tracks.forEach(t => state.queue.push(t));
         UI.renderQueue();
-        // If nothing is playing, start immediately with the first AI track
-        if (!state.isPlaying) {
+        // Start immediately when called at end-of-context: audio.ended is true
+        // but state.isPlaying hasn't been reset yet. Also handle the paused/idle case.
+        const audio = document.getElementById('main-audio');
+        const audioIdle = !audio || audio.paused || audio.ended;
+        if (!state.isPlaying || audioIdle) {
             const first = state.queue.shift();
             UI.renderQueue();
             playTrack(trackPlaybackId(first), first.title, first.artist, first.thumbnail);
