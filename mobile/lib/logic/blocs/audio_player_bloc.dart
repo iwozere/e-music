@@ -7,6 +7,9 @@ import 'package:audio_service/audio_service.dart';
 import '../audio_handler.dart';
 import '../../models/track.dart';
 import '../../repositories/track_repository.dart';
+import '../../services/download_service.dart';
+
+// ─── Events ───────────────────────────────────────────────────────────────────
 
 abstract class AudioPlayerEvent {}
 
@@ -47,6 +50,49 @@ class PlayPlaylistEvent extends AudioPlayerEvent {
   PlayPlaylistEvent(this.tracks);
 }
 
+/// Fetch AI suggestions and play them as the next queue.
+class TriggerAiShuffleEvent extends AudioPlayerEvent {}
+
+/// Queue server-side library import and download to device local storage.
+class SaveTrackToLibraryEvent extends AudioPlayerEvent {
+  final Track track;
+  SaveTrackToLibraryEvent(this.track);
+}
+
+// Internal events — not exposed to UI
+class _UpdatePosition extends AudioPlayerEvent {
+  final Duration position;
+  _UpdatePosition(this.position);
+}
+
+class _UpdateDuration extends AudioPlayerEvent {
+  final Duration duration;
+  _UpdateDuration(this.duration);
+}
+
+class _UpdatePlayerState extends AudioPlayerEvent {
+  final PlayerState state;
+  _UpdatePlayerState(this.state);
+}
+
+class _UpdateCurrentTrack extends AudioPlayerEvent {
+  final Track track;
+  _UpdateCurrentTrack(this.track);
+}
+
+class _HandlePlaybackError extends AudioPlayerEvent {
+  final String message;
+  _HandlePlaybackError(this.message);
+}
+
+class _TrackSavedLocally extends AudioPlayerEvent {
+  final String trackId;
+  final String localPath;
+  _TrackSavedLocally(this.trackId, this.localPath);
+}
+
+// ─── State ────────────────────────────────────────────────────────────────────
+
 class AudioPlayerState {
   final Track? currentTrack;
   final List<Track> queue;
@@ -55,6 +101,8 @@ class AudioPlayerState {
   final Duration duration;
   final PlayerState playerState;
   final String? errorMessage;
+  final bool isAiShuffling;
+  final bool isSavingToLibrary;
 
   AudioPlayerState({
     this.currentTrack,
@@ -64,6 +112,8 @@ class AudioPlayerState {
     this.duration = Duration.zero,
     required this.playerState,
     this.errorMessage,
+    this.isAiShuffling = false,
+    this.isSavingToLibrary = false,
   });
 
   AudioPlayerState copyWith({
@@ -74,6 +124,8 @@ class AudioPlayerState {
     Duration? duration,
     PlayerState? playerState,
     String? errorMessage,
+    bool? isAiShuffling,
+    bool? isSavingToLibrary,
   }) {
     return AudioPlayerState(
       currentTrack: currentTrack ?? this.currentTrack,
@@ -83,14 +135,22 @@ class AudioPlayerState {
       duration: duration ?? this.duration,
       playerState: playerState ?? this.playerState,
       errorMessage: errorMessage,
+      isAiShuffling: isAiShuffling ?? this.isAiShuffling,
+      isSavingToLibrary: isSavingToLibrary ?? this.isSavingToLibrary,
     );
   }
 }
+
+// ─── Bloc ─────────────────────────────────────────────────────────────────────
 
 class AudioPlayerBloc extends Bloc<AudioPlayerEvent, AudioPlayerState> {
   static const _lockChannel = MethodChannel('com.myspotify.mobile/locks');
   final MyAudioHandler audioHandler;
   final TrackRepository trackRepository;
+
+  // Guards against duplicate TriggerAiShuffleEvent from rapid `completed` stream events.
+  // Checked synchronously in the stream listener (before BLoC state can update).
+  bool _aiShufflePending = false;
 
   AudioPlayer get _audioPlayer => audioHandler.player;
 
@@ -124,6 +184,16 @@ class AudioPlayerBloc extends Bloc<AudioPlayerEvent, AudioPlayerState> {
       } else if (playerState.processingState == ProcessingState.idle ||
           playerState.processingState == ProcessingState.completed) {
         _releaseLocks();
+      }
+
+      // Auto-trigger AI shuffle when the queue is exhausted.
+      // Use _aiShufflePending (synchronous flag) instead of state.isAiShuffling
+      // because BLoC state may not have updated yet when this fires.
+      if (playerState.processingState == ProcessingState.completed &&
+          !_audioPlayer.hasNext &&
+          !_aiShufflePending) {
+        _aiShufflePending = true;
+        add(TriggerAiShuffleEvent());
       }
     });
 
@@ -160,60 +230,84 @@ class AudioPlayerBloc extends Bloc<AudioPlayerEvent, AudioPlayerState> {
     });
 
     on<PlayPlaylistEvent>((event, emit) async {
-      if (event.tracks.isNotEmpty) {
-        emit(state.copyWith(queue: event.tracks, errorMessage: null));
+      if (event.tracks.isEmpty) return;
+      // Queue is updated again after URL resolution to reflect any dropped tracks
+      emit(state.copyWith(queue: event.tracks, errorMessage: null));
+      try {
+        // DNS warm-up
         try {
-          // Warm up DNS cache
-          try {
-            final uri = Uri.parse(trackRepository.apiClient.baseUrl);
-            if (uri.hasAuthority) {
-              _loggerInfo('Warming up DNS for ${uri.host}...');
-              InternetAddress.lookup(uri.host)
-                  .then((addresses) {
-                    _loggerInfo(
-                      'DNS lookup successful: ${addresses.length} addresses found.',
-                    );
-                  })
-                  .catchError((e) {
-                    _loggerError('DNS warm-up failed: $e');
-                    return null;
-                  });
-            }
-          } catch (e) {
-            _loggerError('Failed to parse baseUrl for DNS warm-up: $e');
+          final uri = Uri.parse(trackRepository.apiClient.baseUrl);
+          if (uri.hasAuthority) {
+            _loggerInfo('Warming up DNS for ${uri.host}...');
+            InternetAddress.lookup(uri.host)
+                .then((_) {})
+                .catchError((_) => null);
           }
+        } catch (_) {}
 
-          final urlFutures = event.tracks
-              .map((t) => trackRepository.getStreamUrl(t.remoteId ?? t.id))
-              .toList();
-          final urls = await Future.wait(urlFutures);
-          final sources = List<AudioSource>.generate(event.tracks.length, (i) {
-            final track = event.tracks[i];
-            return AudioSource.uri(
-              Uri.parse(urls[i]),
-              tag: MediaItem(
-                id: track.remoteId ?? track.id,
-                album: 'Album',
-                title: track.title,
-                artist: track.artist,
-                artUri: track.thumbnail != null
-                    ? Uri.parse(track.thumbnail!)
-                    : null,
-              ),
-            );
-          });
+        // Fetch stream URLs only for tracks without a valid local file.
+        // Catch individual failures so one bad track doesn't abort the whole playlist.
+        final urls = List<String?>.filled(event.tracks.length, null);
+        await Future.wait([
+          for (int i = 0; i < event.tracks.length; i++)
+            () async {
+              final track = event.tracks[i];
+              final hasLocal = track.localPath != null &&
+                  File(track.localPath!).existsSync();
+              if (!hasLocal) {
+                try {
+                  urls[i] = await trackRepository
+                      .getStreamUrl(track.remoteId ?? track.id);
+                } catch (e) {
+                  _loggerError('URL fetch failed for ${track.id}: $e');
+                }
+              }
+            }(),
+        ]);
 
-          await audioHandler.stop();
-          await _audioPlayer.setAudioSources(sources, preload: false);
-          await audioHandler.play();
-
-          emit(
-            state.copyWith(currentTrack: event.tracks.first, isPlaying: true),
-          );
-        } catch (e) {
-          _loggerError('Error playing playlist: $e');
-          emit(state.copyWith(errorMessage: 'Playback error: $e'));
+        // Drop tracks whose URL could not be resolved (no local file, no stream URL)
+        final validEntries = <({Track track, String? url})>[];
+        for (int i = 0; i < event.tracks.length; i++) {
+          final track = event.tracks[i];
+          final hasLocal = track.localPath != null &&
+              File(track.localPath!).existsSync();
+          if (hasLocal || urls[i] != null) {
+            validEntries.add((track: track, url: urls[i]));
+          }
         }
+        if (validEntries.isEmpty) throw Exception('No playable tracks in playlist');
+
+        final sources = validEntries.map((e) {
+          final tag = MediaItem(
+            id: e.track.remoteId ?? e.track.id,
+            album: e.track.album ?? 'Album',
+            title: e.track.title,
+            artist: e.track.artist,
+            artUri: e.track.thumbnail != null
+                ? Uri.parse(e.track.thumbnail!)
+                : null,
+          );
+          final hasLocal = e.track.localPath != null &&
+              File(e.track.localPath!).existsSync();
+          if (hasLocal) {
+            return AudioSource.file(e.track.localPath!, tag: tag);
+          }
+          return AudioSource.uri(Uri.parse(e.url!), tag: tag);
+        }).toList();
+
+        await audioHandler.stop();
+        await _audioPlayer.setAudioSources(sources, preload: false);
+        await audioHandler.play();
+
+        final playableTracks = validEntries.map((e) => e.track).toList();
+        emit(state.copyWith(
+          queue: playableTracks,
+          currentTrack: playableTracks.first,
+          isPlaying: true,
+        ));
+      } catch (e) {
+        _loggerError('Error playing playlist: $e');
+        emit(state.copyWith(errorMessage: 'Playback error: $e'));
       }
     });
 
@@ -249,6 +343,87 @@ class AudioPlayerBloc extends Bloc<AudioPlayerEvent, AudioPlayerState> {
       audioHandler.seek(event.position);
     });
 
+    on<TriggerAiShuffleEvent>((event, emit) async {
+      if (state.isAiShuffling) return;
+
+      final token = await trackRepository.apiClient.getToken();
+      if (token == null) {
+        _aiShufflePending = false;
+        emit(state.copyWith(errorMessage: 'login_required'));
+        return;
+      }
+
+      emit(state.copyWith(isAiShuffling: true, errorMessage: null));
+      try {
+        // Build context from current track + queue
+        final contextIds = <String>[];
+        if (state.currentTrack != null) {
+          contextIds.add(state.currentTrack!.remoteId ?? state.currentTrack!.id);
+        }
+        for (final t in state.queue) {
+          final id = t.remoteId ?? t.id;
+          if (!contextIds.contains(id)) contextIds.add(id);
+        }
+
+        final suggestions = await trackRepository.getAiShuffle(contextIds);
+        if (suggestions.isEmpty) {
+          emit(state.copyWith(
+            isAiShuffling: false,
+            errorMessage: 'AI shuffle returned no tracks',
+          ));
+          return;
+        }
+
+        emit(state.copyWith(isAiShuffling: false));
+        add(PlayPlaylistEvent(suggestions));
+      } catch (e) {
+        _loggerError('AI shuffle failed: $e');
+        emit(state.copyWith(
+          isAiShuffling: false,
+          errorMessage: 'AI shuffle failed: $e',
+        ));
+      } finally {
+        _aiShufflePending = false;
+      }
+    });
+
+    on<SaveTrackToLibraryEvent>((event, emit) async {
+      if (state.isSavingToLibrary) return;
+      emit(state.copyWith(isSavingToLibrary: true, errorMessage: null));
+      try {
+        // 1. Queue server-side library import (fire-and-forget, best effort)
+        await trackRepository.saveToLibrary(event.track.id);
+
+        // 2. Get a signed stream URL and download the audio to device storage
+        final streamUrl = await trackRepository.getStreamUrl(
+          event.track.remoteId ?? event.track.id,
+        );
+        final localPath = await DownloadService.downloadTrack(
+          trackId: event.track.id,
+          streamUrl: streamUrl,
+        );
+
+        if (localPath != null) {
+          add(_TrackSavedLocally(event.track.id, localPath));
+        }
+        emit(state.copyWith(isSavingToLibrary: false));
+      } catch (e) {
+        _loggerError('Save to library failed: $e');
+        emit(state.copyWith(
+          isSavingToLibrary: false,
+          errorMessage: 'Save failed: $e',
+        ));
+      }
+    });
+
+    on<_TrackSavedLocally>((event, emit) {
+      // Update current track's localPath so subsequent plays use the local file
+      if (state.currentTrack?.id == event.trackId) {
+        final updated = state.currentTrack!.copyWith(localPath: event.localPath);
+        emit(state.copyWith(currentTrack: updated));
+      }
+    });
+
     on<_UpdatePosition>((event, emit) {
       emit(state.copyWith(position: event.position));
     });
@@ -258,12 +433,10 @@ class AudioPlayerBloc extends Bloc<AudioPlayerEvent, AudioPlayerState> {
     });
 
     on<_UpdatePlayerState>((event, emit) {
-      emit(
-        state.copyWith(
-          playerState: event.state,
-          isPlaying: event.state.playing,
-        ),
-      );
+      emit(state.copyWith(
+        playerState: event.state,
+        isPlaying: event.state.playing,
+      ));
     });
 
     on<_UpdateCurrentTrack>((event, emit) async {
@@ -280,37 +453,52 @@ class AudioPlayerBloc extends Bloc<AudioPlayerEvent, AudioPlayerState> {
 
     on<UpdateTrackLikedStatus>((event, emit) {
       if (state.currentTrack?.id == event.trackId) {
-        final updatedTrack = state.currentTrack!.copyWith(
-          isLiked: event.isLiked,
-        );
+        final updatedTrack = state.currentTrack!.copyWith(isLiked: event.isLiked);
         emit(state.copyWith(currentTrack: updatedTrack));
       }
     });
   }
 
   Future<void> _playTrack(Track track, Emitter<AudioPlayerState> emit) async {
-    final url = await trackRepository.getStreamUrl(track.remoteId ?? track.id);
     try {
-      final source = AudioSource.uri(
-        Uri.parse(url),
-        tag: MediaItem(
-          id: track.remoteId ?? track.id,
-          album: 'Album',
-          title: track.title,
-          artist: track.artist,
-          artUri: track.thumbnail != null ? Uri.parse(track.thumbnail!) : null,
-        ),
-      );
+      final AudioSource source;
+
+      // Local-first: use device file when available, fall back to server stream
+      final localFile = track.localPath != null ? File(track.localPath!) : null;
+      if (localFile != null && localFile.existsSync()) {
+        _loggerInfo('Playing from local file: ${track.localPath}');
+        source = AudioSource.file(
+          track.localPath!,
+          tag: MediaItem(
+            id: track.id,
+            album: track.album ?? 'Album',
+            title: track.title,
+            artist: track.artist,
+            artUri: track.thumbnail != null ? Uri.parse(track.thumbnail!) : null,
+          ),
+        );
+      } else {
+        final url = await trackRepository.getStreamUrl(track.remoteId ?? track.id);
+        source = AudioSource.uri(
+          Uri.parse(url),
+          tag: MediaItem(
+            id: track.remoteId ?? track.id,
+            album: track.album ?? 'Album',
+            title: track.title,
+            artist: track.artist,
+            artUri: track.thumbnail != null ? Uri.parse(track.thumbnail!) : null,
+          ),
+        );
+      }
+
       await _audioPlayer.setAudioSource(source, preload: false);
       audioHandler.play();
-      emit(
-        state.copyWith(
-          currentTrack: track,
-          isPlaying: true,
-          queue: [track],
-          errorMessage: null,
-        ),
-      );
+      emit(state.copyWith(
+        currentTrack: track,
+        isPlaying: true,
+        queue: [track],
+        errorMessage: null,
+      ));
       trackRepository.playTrack(track.id);
     } catch (e) {
       _loggerError('Error playing track ${track.id}: $e');
@@ -351,29 +539,4 @@ class AudioPlayerBloc extends Bloc<AudioPlayerEvent, AudioPlayerState> {
     _releaseLocks();
     return super.close();
   }
-}
-
-class _UpdatePosition extends AudioPlayerEvent {
-  final Duration position;
-  _UpdatePosition(this.position);
-}
-
-class _UpdateDuration extends AudioPlayerEvent {
-  final Duration duration;
-  _UpdateDuration(this.duration);
-}
-
-class _UpdatePlayerState extends AudioPlayerEvent {
-  final PlayerState state;
-  _UpdatePlayerState(this.state);
-}
-
-class _UpdateCurrentTrack extends AudioPlayerEvent {
-  final Track track;
-  _UpdateCurrentTrack(this.track);
-}
-
-class _HandlePlaybackError extends AudioPlayerEvent {
-  final String message;
-  _HandlePlaybackError(this.message);
 }

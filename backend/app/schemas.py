@@ -4,6 +4,8 @@ Pydantic request/response schemas (API contracts).
 from datetime import datetime
 from typing import Optional
 
+from typing import List
+
 from pydantic import BaseModel, ConfigDict, Field, EmailStr
 
 
@@ -44,3 +46,7 @@ class TokenPairResponse(BaseModel):
     refresh_token: str
     token_type: str = "bearer"
     expires_in: int
+
+
+class AiShuffleBody(BaseModel):
+    track_ids: List[str] = Field(default_factory=list, description="Ordered list of recently played track IDs (internal UUIDs or remote_ids)")

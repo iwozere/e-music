@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 from typing import Optional, List
-from sqlmodel import SQLModel, Field, Relationship
+from sqlmodel import SQLModel, Field, Relationship, Column, Integer
 
 class RefreshToken(SQLModel, table=True):
     """
@@ -74,6 +74,17 @@ class PlaylistTrack(SQLModel, table=True):
     playlist_id: str = Field(foreign_key="playlist.id", primary_key=True)
     track_id: str = Field(foreign_key="track.id", primary_key=True)
     position: int
+
+class PlayHistory(SQLModel, table=True):
+    """Per-play event log used by AI shuffle for context. Separate from UserActivity aggregates."""
+    id: Optional[int] = Field(default=None, sa_column=Column(Integer, primary_key=True, autoincrement=True))
+    user_id: Optional[str] = Field(default=None, foreign_key="user.id", index=True)
+    track_id: str = Field(foreign_key="track.id", index=True)
+    played_at: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc),
+        index=True,
+    )
+
 
 class UserActivity(SQLModel, table=True):
     """

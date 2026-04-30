@@ -16,9 +16,9 @@ from app.config import settings
 from app.db import get_session
 from app.dependencies import get_current_user, get_optional_user
 from app.limiter_ext import limiter
-from app.models import Track, User, UserActivity
+from app.models import PlayHistory, Track, User, UserActivity
 from app.public_api import api_v1_base_url
-from app.schemas import StreamGrantBody
+from app.schemas import AiShuffleBody, StreamGrantBody
 from app.services import streamer
 from app.services.cache_manager import promote_track_to_cache
 from app.services.library_import import is_under_music_path, schedule_import_cached_file
@@ -481,6 +481,7 @@ async def track_played(
             )
             promote_track_to_cache(track.remote_id)
 
+    session.add(PlayHistory(user_id=current_user.id, track_id=track.id))
     session.commit()
     return {"status": "success", "play_count": activity.play_count}
 
@@ -633,6 +634,97 @@ async def stream_track(  # pylint: disable=too-many-arguments,too-many-positiona
         background_tasks=background_tasks,
         session=session,
     )
+
+
+@router.post("/{track_id}/save-to-library")
+async def save_to_library(
+    track_id: str,
+    background_tasks: BackgroundTasks,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """
+    Trigger permanent library import for a cached YouTube track.
+    Runs in background; returns immediately. Mobile app uses the stream URL
+    to download the file locally after calling this endpoint.
+    """
+    statement = select(Track).where(or_(Track.id == track_id, Track.remote_id == track_id))
+    track = session.exec(statement).first()
+    if not track:
+        raise HTTPException(status_code=404, detail="Track not found")
+    if track.source_type != "youtube":
+        return {"status": "skipped", "reason": "local tracks are already in the library"}
+    if not track.remote_id:
+        raise HTTPException(status_code=422, detail="Track has no remote_id")
+
+    source_path = track.local_path or ""
+    background_tasks.add_task(
+        schedule_import_cached_file,
+        current_user.id,
+        track.remote_id,
+        source_path,
+    )
+    return {"status": "queued"}
+
+
+@router.post("/ai-shuffle")
+@limiter.limit("10/minute")
+async def ai_shuffle(
+    request: Request,
+    body: AiShuffleBody,
+    session: Session = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+) -> List[dict]:
+    """
+    Return up to 10 AI-suggested tracks based on the provided playback context.
+    Uses Groq (Llama) to infer genre/mood, then resolves each suggestion via YouTube Music.
+    """
+    from app.services.ai_shuffle import get_ai_suggestions, resolve_suggestions_to_tracks
+
+    context_tracks: List[dict] = []
+
+    if body.track_ids:
+        ids = [tid for tid in body.track_ids if tid][:50]
+        # Build a lookup keyed by whichever ID the client used (UUID or remote_id)
+        by_client_id: dict = {}
+        stmt = select(Track).where(col(Track.id).in_(ids))
+        for t in session.exec(stmt).all():
+            by_client_id[t.id] = t
+        missing = [tid for tid in ids if tid not in by_client_id]
+        if missing:
+            stmt2 = select(Track).where(col(Track.remote_id).in_(missing))
+            for t in session.exec(stmt2).all():
+                by_client_id[t.remote_id] = t
+        for tid in ids:
+            t = by_client_id.get(tid)
+            if t:
+                context_tracks.append({"title": t.title, "artist": t.artist or ""})
+
+    # Supplement with play_history when authenticated user has sparse context
+    if current_user and len(context_tracks) < 2:
+        hist_stmt = (
+            select(Track)
+            .join(PlayHistory, PlayHistory.track_id == Track.id)
+            .where(col(PlayHistory.user_id) == current_user.id)
+            .order_by(col(PlayHistory.played_at).desc())
+            .limit(10)
+        )
+        history_tracks = session.exec(hist_stmt).all()
+        existing_titles = {c["title"] for c in context_tracks}
+        for t in reversed(history_tracks):
+            if t.title not in existing_titles:
+                context_tracks.insert(0, {"title": t.title, "artist": t.artist or ""})
+                existing_titles.add(t.title)
+
+    if not context_tracks:
+        raise HTTPException(status_code=400, detail="No context tracks — play something first")
+
+    suggestions = await get_ai_suggestions(context_tracks)
+    if not suggestions:
+        raise HTTPException(status_code=503, detail="AI shuffle unavailable — check GROQ_API_KEY")
+
+    tracks = await resolve_suggestions_to_tracks(suggestions)
+    return tracks
 
 
 @router.get("/{track_id}")

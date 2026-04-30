@@ -112,4 +112,23 @@ class TrackRepository {
     }
     return {};
   }
+
+  /// Queues a server-side permanent library import for a YouTube track.
+  Future<bool> saveToLibrary(String trackId) async {
+    final response = await apiClient.post('/tracks/$trackId/save-to-library');
+    return response.statusCode == 200;
+  }
+
+  /// Fetches AI-suggested tracks from Groq based on the provided context track IDs.
+  Future<List<Track>> getAiShuffle(List<String> trackIds) async {
+    final response = await apiClient.post(
+      '/tracks/ai-shuffle',
+      body: {'track_ids': trackIds},
+    );
+    if (response.statusCode == 200) {
+      final List<dynamic> data = jsonDecode(response.body);
+      return data.map((json) => Track.fromJson(json)).toList();
+    }
+    throw Exception('AI shuffle failed: HTTP ${response.statusCode}');
+  }
 }

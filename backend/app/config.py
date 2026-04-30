@@ -61,6 +61,11 @@ class Settings(BaseSettings):
     # Emergency kill-switch: force the legacy subprocess pipeline even when the resolver is up.
     STREAM_FORCE_LEGACY_SUBPROCESS: bool = False
 
+    # --- AI Shuffle (Groq LLM-backed radio mode) ---
+    GROQ_API_KEY: Optional[str] = None
+    # Model to use; llama-3.1-8b-instant is fast and free-tier friendly.
+    GROQ_MODEL: str = "llama-3.1-8b-instant"
+
     # --- Prefetch / warm-cache (Feature 2: zero-latency next-track playback) ---
     PREFETCH_ENABLED: bool = True
     # Upper bound on concurrent prefetch jobs server-wide; guards the Pi's CPU/network.

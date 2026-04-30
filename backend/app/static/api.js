@@ -115,7 +115,14 @@ const API = {
         headers: { 'Authorization': `Bearer ${token}` }
     }),
 
-    getPublicConfig: () => fetch(`${CONFIG.apiBase}/config`)
+    getPublicConfig: () => fetch(`${CONFIG.apiBase}/config`),
+
+    aiShuffle: (trackIds) =>
+        apiFetch('/tracks/ai-shuffle', {
+            method: 'POST',
+            body: JSON.stringify({ track_ids: trackIds }),
+            headers: { 'Content-Type': 'application/json' },
+        })
 };
 
 // Explicit exports for global scope

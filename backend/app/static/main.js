@@ -253,6 +253,7 @@ const initEventListeners = () => {
     });
     document.getElementById('btn-next')?.addEventListener('click', playNext);
     document.getElementById('btn-prev')?.addEventListener('click', playPrevious);
+    document.getElementById('btn-ai-shuffle')?.addEventListener('click', triggerAiShuffle);
 };
 
 const initInfiniteScroll = () => {
@@ -519,6 +520,49 @@ window.removeFromPlaylist = async (trackId) => {
     } catch (err) {
         console.error("Remove track failed:", err);
         UI.showToast("Connection error. Try again.");
+    }
+};
+
+window.triggerAiShuffle = async () => {
+    if (!state.user) {
+        UI.showToast("Log in to use AI Shuffle");
+        document.getElementById('auth-modal').style.display = 'flex';
+        return;
+    }
+    const contextIds = (state.currentTracksContext || []).map(t => trackPlaybackId(t)).filter(Boolean);
+    if (contextIds.length === 0 && !state.currentTrack) {
+        UI.showToast("Play something first to use AI Shuffle");
+        return;
+    }
+    // Include current track if context is empty (single-track scenario)
+    const ids = contextIds.length > 0 ? contextIds : [trackPlaybackId(state.currentTrack)].filter(Boolean);
+
+    UI.showToast("AI is curating your next tracks...");
+    try {
+        const res = await API.aiShuffle(ids);
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            UI.showToast(err.detail || "AI shuffle failed, try again.");
+            return;
+        }
+        const tracks = await res.json();
+        if (!tracks.length) {
+            UI.showToast("AI returned no suggestions — try again.");
+            return;
+        }
+        tracks.forEach(t => state.queue.push(t));
+        UI.renderQueue();
+        // If nothing is playing, start immediately with the first AI track
+        if (!state.isPlaying) {
+            const first = state.queue.shift();
+            UI.renderQueue();
+            playTrack(trackPlaybackId(first), first.title, first.artist, first.thumbnail);
+        } else {
+            UI.showToast(`Added ${tracks.length} tracks to queue`);
+        }
+    } catch (err) {
+        console.error("AI shuffle error:", err);
+        UI.showToast("AI shuffle failed — check your connection.");
     }
 };
 

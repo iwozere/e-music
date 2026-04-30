@@ -21,7 +21,15 @@ class PlayerScreen extends StatelessWidget {
         title: const Text('Now Playing', style: TextStyle(fontSize: 16)),
         centerTitle: true,
       ),
-      body: BlocBuilder<AudioPlayerBloc, AudioPlayerState>(
+      body: BlocConsumer<AudioPlayerBloc, AudioPlayerState>(
+        listenWhen: (prev, curr) => curr.errorMessage != prev.errorMessage && curr.errorMessage != null,
+        listener: (context, state) {
+          if (state.errorMessage == 'login_required') {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('Log in to use AI Shuffle')),
+            );
+          }
+        },
         builder: (context, state) {
           if (state.currentTrack == null) {
             return const Center(child: Text('No track playing'));
@@ -179,16 +187,37 @@ class PlayerScreen extends StatelessWidget {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                   children: [
+                    // AI Shuffle button
                     IconButton(
-                      icon: const Icon(Icons.shuffle, color: Colors.white70),
-                      onPressed: () {},
+                      icon: state.isAiShuffling
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white70,
+                              ),
+                            )
+                          : const Icon(Icons.auto_awesome, color: Colors.white70),
+                      tooltip: 'AI Shuffle',
+                      onPressed: state.isAiShuffling
+                          ? null
+                          : () {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('AI is curating your next tracks...'),
+                                  duration: Duration(seconds: 2),
+                                ),
+                              );
+                              context.read<AudioPlayerBloc>().add(
+                                TriggerAiShuffleEvent(),
+                              );
+                            },
                     ),
                     IconButton(
                       icon: const Icon(Icons.skip_previous, size: 36),
                       onPressed: () {
-                        context.read<AudioPlayerBloc>().add(
-                          SkipPreviousEvent(),
-                        );
+                        context.read<AudioPlayerBloc>().add(SkipPreviousEvent());
                       },
                     ),
                     Container(
@@ -217,9 +246,43 @@ class PlayerScreen extends StatelessWidget {
                         context.read<AudioPlayerBloc>().add(SkipNextEvent());
                       },
                     ),
+                    // Save to Library / Download button
                     IconButton(
-                      icon: const Icon(Icons.repeat, color: Colors.white70),
-                      onPressed: () {},
+                      icon: state.isSavingToLibrary
+                          ? const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white70,
+                              ),
+                            )
+                          : Icon(
+                              state.currentTrack?.localPath != null
+                                  ? Icons.download_done
+                                  : Icons.file_download,
+                              color: state.currentTrack?.localPath != null
+                                  ? Theme.of(context).primaryColor
+                                  : Colors.white70,
+                            ),
+                      tooltip: state.currentTrack?.localPath != null
+                          ? 'Saved to device'
+                          : 'Save to library',
+                      onPressed: state.isSavingToLibrary ||
+                              state.currentTrack == null ||
+                              state.currentTrack?.localPath != null
+                          ? null
+                          : () {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text('Saving to library...'),
+                                  duration: Duration(seconds: 2),
+                                ),
+                              );
+                              context.read<AudioPlayerBloc>().add(
+                                SaveTrackToLibraryEvent(state.currentTrack!),
+                              );
+                            },
                     ),
                   ],
                 ),

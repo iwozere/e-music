@@ -214,9 +214,23 @@ class _GoogleSignInButton extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(30)),
       ),
-      icon: Image.network(
-        'https://upload.wikimedia.org/wikipedia/commons/thumb/c/c1/Google_%22G%22_logo.svg/1200px-Google_%22G%22_logo.svg.png',
+      icon: Container(
+        width: 24,
         height: 24,
+        decoration: const BoxDecoration(
+          color: Color(0xFF4285F4),
+          shape: BoxShape.circle,
+        ),
+        child: const Center(
+          child: Text(
+            'G',
+            style: TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.bold,
+              fontSize: 14,
+            ),
+          ),
+        ),
       ),
       label: const Text(
         'Sign in with Google',

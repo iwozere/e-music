@@ -296,7 +296,13 @@ window.playNext = () => {
     }
     if (state.currentTracksContext.length > 0) {
         let nextIndex = state.currentTrackIndex + 1;
-        if (nextIndex >= state.currentTracksContext.length) nextIndex = 0;
+        if (nextIndex >= state.currentTracksContext.length) {
+            // End of context — hand off to AI shuffle (Radio Mode, logged-in users only)
+            if (state.user && typeof window.triggerAiShuffle === 'function') {
+                window.triggerAiShuffle();
+            }
+            return;
+        }
         const next = state.currentTracksContext[nextIndex];
         playTrack(trackPlaybackId(next), next.title, next.artist, next.thumbnail);
     }
