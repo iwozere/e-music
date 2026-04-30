@@ -231,6 +231,10 @@ class AudioPlayerBloc extends Bloc<AudioPlayerEvent, AudioPlayerState> {
 
     on<PlayPlaylistEvent>((event, emit) async {
       if (event.tracks.isEmpty) return;
+      // Hold the shuffle guard while we stop the old player and load new sources.
+      // audioHandler.stop() briefly puts the player in `completed` state which would
+      // otherwise re-trigger TriggerAiShuffleEvent before the new playlist is ready.
+      _aiShufflePending = true;
       // Queue is updated again after URL resolution to reflect any dropped tracks
       emit(state.copyWith(queue: event.tracks, errorMessage: null));
       try {
@@ -308,6 +312,8 @@ class AudioPlayerBloc extends Bloc<AudioPlayerEvent, AudioPlayerState> {
       } catch (e) {
         _loggerError('Error playing playlist: $e');
         emit(state.copyWith(errorMessage: 'Playback error: $e'));
+      } finally {
+        _aiShufflePending = false;
       }
     });
 
