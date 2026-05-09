@@ -645,21 +645,40 @@ async def stream_youtube(
 
     first_chunk, rest = await asyncio.to_thread(_pull_first_chunk, gen)
     if first_chunk is None or rest is None:
-        # The generator already cleaned up and logged; craft a friendly error.
-        if use_legacy:
+        if not use_legacy and shutil.which(_find_executable("yt-dlp")):
+            # Resolver URL produced no data — most likely a cached googlevideo URL
+            # returned 403 (expired). The resolver cache was already invalidated by
+            # _feed_from_http. Fall back to the legacy subprocess which resolves fresh.
+            _logger.warning(
+                "streamer: resolver pipeline empty for %s — falling back to legacy subprocess",
+                track_id,
+            )
+            use_legacy = True
+            legacy_final = os.path.join(TEMP_CACHE_DIR, f"{track_id}.mp3")
+            legacy_download = f"{legacy_final}.download"
+            legacy_event = threading.Event()
+            with _active_downloads_lock:
+                _active_downloads[track_id] = legacy_event
+            gen = _stream_legacy_subprocess(
+                track_id=track_id,
+                download_path=legacy_download,
+                final_path=legacy_final,
+                done_event=legacy_event,
+                library_user_id=library_user_id,
+            )
+            first_chunk, rest = await asyncio.to_thread(_pull_first_chunk, gen)
+            media_type = "audio/mpeg"
+
+        if first_chunk is None or rest is None:
+            # Both paths failed — short-circuit subsequent requests briefly.
             fail_detail = (
                 "Could not start audio from YouTube (no data from yt-dlp/ffmpeg). "
                 "Install/upgrade: pip install -U 'yt-dlp[default]' with Deno or Node 20+ in PATH "
                 "(Docker image includes Deno). Set YTDLP_COOKIES_FILE if needed. "
                 "See server logs for yt-dlp/ffmpeg stderr."
             )
-        else:
-            fail_detail = (
-                "Could not start audio from YouTube (resolver produced no bytes). "
-                "Retry in a moment; check server logs for ffmpeg / upstream errors."
-            )
-        _youtube_fail_record(track_id, fail_detail)
-        raise HTTPException(status_code=503, detail=fail_detail)
+            _youtube_fail_record(track_id, fail_detail)
+            raise HTTPException(status_code=503, detail=fail_detail)
 
     _youtube_fail_clear(track_id)
 

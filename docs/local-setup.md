@@ -39,6 +39,9 @@ The backend looks for a `.env` file in the current directory or the project root
   - **Example**: `CACHE_DIR=R:\e-music\cache`
 - `TEMP_DIR`: Where to store temporary stream chunks.
   - **Example**: `TEMP_DIR=R:\e-music\temp_cache`
+- `GROQ_API_KEY` (optional): Enables AI shuffle / radio mode. Get a free key at [console.groq.com](https://console.groq.com).
+- `GEMINI_API_KEY` (optional): Enables hum-to-search melody identification. Get a free key at [aistudio.google.com](https://aistudio.google.com).
+  - Default model: `gemini-2.5-flash` (free tier). Override with `GEMINI_MODEL=<model-id>`.
 
 ## 4. Running the Backend
 

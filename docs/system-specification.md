@@ -51,6 +51,18 @@ MySpotify is a self-hosted music stack with a centralized backend and multiple c
 - **AI Shuffle (Radio Mode):** When the queue and context are exhausted, the web client automatically calls `POST /api/v1/tracks/ai-shuffle` (logged-in users only). The endpoint sends recent listening history to the Groq LLM (Llama 3.1 8B), which returns 10 track suggestions resolved via YouTube Music search. The button `#btn-ai-shuffle` also lets users trigger this on demand.
 - **Related tracks:** `GET /api/v1/tracks/{track_id}/related` returns YouTube Music–backed suggestions (available for future client integrations; currently not wired into the main web autoplay loop).
 
+### 2.6 Hum-to-Search (melody identification)
+
+- **Trigger:** Mic icon button in the search bar (web and Flutter mobile).
+- **Recording:** Client records 10 seconds of audio (web: `MediaRecorder` → `audio/webm;codecs=opus`; Flutter: `record` package → AAC-LC `.m4a`).
+- **Upload:** Multipart `POST /api/v1/ai/identify` with the audio file.
+- **Backend:** Audio bytes are sent inline to **Google Gemini** (multimodal model `gemini-2.5-flash` by default). Gemini returns `{artist, title, confidence}` or `{error: not_found}`.
+- **Confidence gate:** Results below `IDENTIFY_MIN_CONFIDENCE` (default 75) are treated as not-found.
+- **YouTube resolution:** On a confident result, the backend searches YouTube Music for the identified track and returns `{artist, title, confidence, remote_id, thumbnail}`.
+- **Client UX:** On success the search field is auto-filled with `"Artist - Title"` and a search is triggered. On failure a snackbar/toast shows the reason.
+- **Rate limit:** 3 requests/minute per authenticated user.
+- **Auth:** Requires a valid JWT — anonymous access is blocked to protect Gemini API quota.
+
 ### 2.4 Organization
 
 - **Liked songs:** Per-user likes via `UserActivity.is_liked` and `GET /api/v1/tracks/liked`.
@@ -127,6 +139,21 @@ MySpotify is a self-hosted music stack with a centralized backend and multiple c
 | `/api/v1/playlists/{playlist_id}/tracks` | GET | JWT | List tracks (position-ordered; lazy thumbnail backfill). |
 | `/api/v1/playlists/{playlist_id}/tracks` | POST | JWT | Add track (form: `track_id`). |
 | `/api/v1/playlists/{playlist_id}/tracks/{track_id}` | DELETE | JWT | Remove track from playlist. |
+
+### AI
+
+| Endpoint | Method | Auth | Description |
+| :------- | :----- | :--- | :---------- |
+| `/api/v1/ai/identify` | POST | JWT | Multipart audio upload → Gemini melody ID → YouTube resolution. Returns `{artist, title, confidence, remote_id, thumbnail}`. 3/min. |
+
+**Request:** `multipart/form-data` with field `audio` containing the audio file. Supported MIME types: `audio/webm`, `audio/mp4`, `audio/mpeg`, `audio/wav`, `audio/ogg`, `audio/opus`, `audio/aac`, `audio/x-m4a`, `audio/x-wav`. Maximum size: 10 MB.
+
+**Responses:**
+- `200` — identified: `{"artist": "...", "title": "...", "confidence": 82, "remote_id": "...", "thumbnail": "..."}`
+- `422` — not identified (low confidence or Gemini returned not_found)
+- `413` — audio file too large
+- `415` — unsupported audio format
+- `503` — `GEMINI_API_KEY` not configured
 
 ### System (admin only)
 
@@ -210,6 +237,15 @@ Used as the input context for AI shuffle: the endpoint looks up the last N entri
 - Parses JSON response `[{artist, title}, ...]`; resolves each via `search_youtube`.
 - Returns 503 if `GROQ_API_KEY` is not configured.
 
+### `services/ai_identify.py` — Gemini melody identification
+
+- `identify_melody(audio_bytes, mime_type) -> dict` — async entry point; delegates the blocking SDK call to `asyncio.to_thread`.
+- `_call_gemini_sync(audio_bytes, mime_type)` — constructs a `genai.Client`, sends audio inline via `types.Part.from_bytes`, and returns the raw text response.
+- `_parse_response(text)` — strips markdown fences, extracts the first JSON object, raises `ValueError` on parse failure.
+- `base_mime(content_type)` — strips codec parameters (`audio/webm;codecs=opus` → `audio/webm`).
+- `ALLOWED_MIME_TYPES` — frozenset of accepted audio MIME types checked before upload.
+- Returns 503 if `GEMINI_API_KEY` is not configured; propagates Gemini SDK exceptions to the router (logged as 502).
+
 ### `services/library_import.py` — Permanent library storage
 
 - Downloads full audio via yt-dlp, embeds ID3 tags + album art (mutagen), moves file to `{MUSIC_PATH}/{Artist}/{Album}/{Track_Title}.mp3`.
@@ -261,6 +297,9 @@ All settings live in `backend/app/config.py` and are populated from the `.env` f
 | `PREFETCH_MAX_CONCURRENT` | 2 | Max simultaneous prefetch tasks. |
 | `GROQ_API_KEY` | — | Groq API key; AI shuffle disabled if unset. |
 | `GROQ_MODEL` | `llama-3.1-8b-instant` | Groq model for AI shuffle. |
+| `GEMINI_API_KEY` | — | Google Gemini API key; hum-to-search disabled if unset. |
+| `GEMINI_MODEL` | `gemini-2.5-flash` | Gemini model for melody identification. |
+| `IDENTIFY_MIN_CONFIDENCE` | `75` | Minimum Gemini confidence (0–100); lower scores return a not-found error. |
 | `GOOGLE_CLIENT_ID` | — | Google OAuth client ID. |
 | `GOOGLE_CLIENT_SECRET` | — | Google OAuth client secret. |
 | `DATABASE_URL` | `sqlite:////app/db/myspotify.db` | SQLModel database URL. |
@@ -290,6 +329,22 @@ See `.env.example` and [local-setup.md](local-setup.md) for OAuth-specific setup
 2. `POST /tracks/ai-shuffle` with body `{"track_ids": ["...", ...]}` (JWT required).
 3. Response is a JSON array of `Track` objects — play as a new playlist.
 4. Guard against duplicate triggers: use a synchronous `_aiShufflePending` flag (mobile) or debounce (web) because the end-of-queue event may fire multiple times before state updates.
+
+### Hum-to-Search flow
+
+1. Show a recording overlay/modal (10-second countdown + wave animation).
+2. Record audio:
+   - **Web:** `navigator.mediaDevices.getUserMedia({audio: true})` → `MediaRecorder` (prefers `audio/webm;codecs=opus`).
+   - **Flutter:** `AudioRecorder().start(RecordConfig(encoder: AudioEncoder.aacLc, sampleRate: 44100, numChannels: 1), path: path)` → `stop()` returns file path.
+3. Build a `FormData` / `MultipartRequest` with field name `audio` and appropriate MIME type.
+4. `POST /api/v1/ai/identify` (JWT required). Show a spinner while identifying.
+5. On `200`: auto-fill the search bar with `"Artist - Title"` and trigger a search.
+6. On error: show a snackbar/toast with the `message` field from the response body.
+
+**Error shape from the backend:**
+```json
+{ "code": "http_422", "message": "Could not identify the melody", "detail": null }
+```
 
 ### Offline / library import flow
 
@@ -355,3 +410,4 @@ See [docker.md](docker.md) for full Compose and Pi/reverse-proxy instructions.
 - [features-v3.md](features-v3.md) — Fast YouTube playback: resolver + stream-copy + prefetch.
 - [features-v4.md](features-v4.md) — Hover-prefetch, phased timing logs, resolver hardening.
 - [features-v5.md](features-v5.md) — Permanent library import + Groq LLM AI shuffle.
+- [features-v6.md](features-v6.md) — Hum-to-Search: Gemini multimodal melody identification.

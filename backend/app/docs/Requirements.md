@@ -10,6 +10,9 @@
 - `yt-dlp` >= 2023.7.6
 - `mutagen` >= 1.46.0
 - `watchdog` >= 3.0.0
+- `slowapi` >= 0.1.9 — rate limiting for API endpoints
+- `groq` >= 0.9.0 — Groq LLM client for AI shuffle
+- `google-genai` >= 2.0.0 — Google Gemini SDK for hum-to-search melody identification
 
 ## External Dependencies
 - **YouTube Music**: For external search and streaming sources.
@@ -17,6 +20,8 @@
 
 ## External Services
 - **Google OAuth2**: Required for secondary authentication method.
+- **Groq API** (optional): Powers AI shuffle / radio mode. Free tier: ~14,400 req/day. Key: `GROQ_API_KEY`.
+- **Google Gemini API** (optional): Powers hum-to-search. Free tier available via Google AI Studio. Key: `GEMINI_API_KEY`.
 - **HTTPS / public access**: Optional; implemented outside this app (e.g. reverse proxy + tunnel in **pi-infra**), not a Python dependency.
 
 ## System Requirements
