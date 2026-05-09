@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 import '../models/track.dart';
 import 'api_client.dart';
 
@@ -117,6 +118,30 @@ class TrackRepository {
   Future<bool> saveToLibrary(String trackId) async {
     final response = await apiClient.post('/tracks/$trackId/save-to-library');
     return response.statusCode == 200;
+  }
+
+  /// Sends recorded audio to the backend for Gemini melody identification.
+  /// Returns {artist, title, confidence, remote_id, thumbnail} on success.
+  /// Throws an [Exception] with a user-readable message on failure.
+  Future<Map<String, dynamic>> identifyMelody(Uint8List audioBytes) async {
+    final response = await apiClient.postMultipart(
+      '/ai/identify',
+      fileField: 'audio',
+      fileBytes: audioBytes,
+      filename: 'hum.m4a',
+      mimeType: 'audio/mp4',
+    );
+
+    final body = jsonDecode(response.body) as Map<String, dynamic>;
+
+    if (response.statusCode == 200) return body;
+
+    // error_handlers.py shape: {message, detail}
+    final detail = body['detail'];
+    final msg = (detail is Map ? detail['message'] : null) ??
+        body['message'] ??
+        'Could not identify the melody';
+    throw Exception(msg as String);
   }
 
   /// Fetches AI-suggested tracks from Groq based on the provided context track IDs.

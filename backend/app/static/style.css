@@ -156,7 +156,7 @@ body {
     width: 100%;
     background: var(--bg-card);
     border: 1px solid var(--border-glass);
-    padding: 14px 20px 14px 48px;
+    padding: 14px 88px 14px 48px;
     border-radius: 16px;
     color: var(--text-main);
     outline: none;
@@ -179,7 +179,7 @@ body {
 
 .search-clear-btn {
     position: absolute;
-    right: 18px;
+    right: 54px;
     top: 50%;
     transform: translateY(-50%);
     background: none;
@@ -187,7 +187,6 @@ body {
     color: var(--text-muted);
     cursor: pointer;
     display: none;
-    /* Hidden by default */
     align-items: center;
     justify-content: center;
     padding: 4px;
@@ -202,6 +201,28 @@ body {
 
 .search-clear-btn.visible {
     display: flex;
+}
+
+.search-mic-btn {
+    position: absolute;
+    right: 18px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 4px;
+    border-radius: 50%;
+    transition: var(--transition);
+}
+
+.search-mic-btn:hover {
+    color: var(--primary);
+    background: rgba(139, 92, 246, 0.1);
 }
 
 /* Track Grid */
@@ -952,4 +973,88 @@ body {
 .empty-state p {
     color: var(--text-muted);
     max-width: 400px;
+}
+
+/* Hum-to-search modal */
+.hum-modal-inner {
+    text-align: center;
+    padding: 48px 40px;
+    min-width: 320px;
+}
+
+.hum-wave {
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    gap: 6px;
+    height: 64px;
+    margin-bottom: 28px;
+}
+
+.hum-wave span {
+    display: block;
+    width: 7px;
+    border-radius: 4px;
+    background: var(--primary);
+    transform-origin: bottom;
+    animation: humBar 0.9s ease-in-out infinite;
+}
+
+.hum-wave span:nth-child(1) { height: 24px; animation-delay: 0.00s; }
+.hum-wave span:nth-child(2) { height: 44px; animation-delay: 0.12s; }
+.hum-wave span:nth-child(3) { height: 60px; animation-delay: 0.24s; }
+.hum-wave span:nth-child(4) { height: 44px; animation-delay: 0.12s; }
+.hum-wave span:nth-child(5) { height: 24px; animation-delay: 0.00s; }
+
+@keyframes humBar {
+    0%, 100% { transform: scaleY(0.3); opacity: 0.5; }
+    50%       { transform: scaleY(1);   opacity: 1; }
+}
+
+.hum-countdown {
+    font-size: 52px;
+    font-weight: 800;
+    background: linear-gradient(135deg, #fff 0%, var(--primary) 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    line-height: 1;
+    margin-bottom: 12px;
+}
+
+.hum-label {
+    color: var(--text-muted);
+    font-size: 15px;
+    margin-bottom: 28px;
+}
+
+.hum-cancel-btn {
+    background: rgba(255, 255, 255, 0.07);
+    color: var(--text-muted);
+    border: 1px solid var(--border-glass);
+    padding: 10px 28px;
+    border-radius: 12px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: var(--transition);
+}
+
+.hum-cancel-btn:hover {
+    background: rgba(255, 255, 255, 0.12);
+    color: var(--text-main);
+}
+
+.hum-spinner {
+    width: 48px;
+    height: 48px;
+    border: 3px solid rgba(139, 92, 246, 0.2);
+    border-top-color: var(--primary);
+    border-radius: 50%;
+    animation: humSpin 0.75s linear infinite;
+    margin: 0 auto 28px;
+}
+
+@keyframes humSpin {
+    to { transform: rotate(360deg); }
 }

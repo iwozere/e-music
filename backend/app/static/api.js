@@ -122,7 +122,11 @@ const API = {
             method: 'POST',
             body: JSON.stringify({ track_ids: trackIds }),
             headers: { 'Content-Type': 'application/json' },
-        })
+        }),
+
+    // FormData body — do NOT set Content-Type; fetch sets it with the correct boundary.
+    identify: (formData) =>
+        apiFetch('/ai/identify', { method: 'POST', body: formData }),
 };
 
 // Explicit exports for global scope

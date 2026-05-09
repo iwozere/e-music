@@ -1,5 +1,5 @@
 // main.js - Entry Point
-console.log("MySpotify v2.9.19");
+console.log("MySpotify v2.9.21");
 
 const state = {
     user: null,
@@ -244,6 +244,9 @@ const initEventListeners = () => {
             else if (view === 'library') loadLibrary();
         });
     });
+
+    // Hum-to-search
+    document.getElementById('btn-hum-search')?.addEventListener('click', triggerHumToSearch);
 
     // Player Buttons
     document.getElementById('btn-play')?.addEventListener('click', () => {
@@ -567,6 +570,114 @@ window.triggerAiShuffle = async () => {
         console.error("AI shuffle error:", err);
         UI.showToast("AI shuffle failed — check your connection.");
     }
+};
+
+window.triggerHumToSearch = async () => {
+    if (!state.user) {
+        UI.showToast("Log in to use hum-to-search");
+        document.getElementById('auth-modal').style.display = 'flex';
+        return;
+    }
+
+    if (!navigator.mediaDevices?.getUserMedia) {
+        UI.showToast("Microphone not supported in this browser");
+        return;
+    }
+
+    let stream;
+    try {
+        stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+    } catch {
+        UI.showToast("Microphone access denied");
+        return;
+    }
+
+    const modal = document.getElementById('hum-modal');
+    const recordingState = document.getElementById('hum-recording-state');
+    const identifyingState = document.getElementById('hum-identifying-state');
+    const countdownEl = document.getElementById('hum-countdown');
+
+    // Reset to recording state
+    recordingState.style.display = 'block';
+    identifyingState.style.display = 'none';
+    const DURATION = 10;
+    countdownEl.textContent = DURATION;
+    modal.style.display = 'flex';
+
+    const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+        ? 'audio/webm;codecs=opus'
+        : 'audio/webm';
+    const recorder = new MediaRecorder(stream, { mimeType });
+    const chunks = [];
+    recorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
+
+    let cancelled = false;
+    let ticker = null;
+
+    const stopAll = () => {
+        clearInterval(ticker);
+        recorder.state !== 'inactive' && recorder.stop();
+        stream.getTracks().forEach(t => t.stop());
+    };
+
+    document.getElementById('btn-hum-cancel').onclick = () => {
+        cancelled = true;
+        stopAll();
+        modal.style.display = 'none';
+    };
+
+    let remaining = DURATION;
+    ticker = setInterval(() => {
+        remaining--;
+        countdownEl.textContent = remaining;
+        if (remaining <= 0) stopAll();
+    }, 1000);
+
+    recorder.start();
+
+    recorder.onstop = async () => {
+        clearInterval(ticker);
+        if (cancelled) return;
+
+        recordingState.style.display = 'none';
+        identifyingState.style.display = 'block';
+
+        const blob = new Blob(chunks, { type: mimeType });
+        const formData = new FormData();
+        formData.append('audio', blob, 'hum.webm');
+
+        try {
+            const res = await API.identify(formData);
+            modal.style.display = 'none';
+
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                // error_handlers.py shape: {message, detail} — detail is null for string errors,
+                // an object for structured ones (e.g. low_confidence).
+                const msg = (err.detail && err.detail.message)
+                    || err.message
+                    || "Could not identify the melody";
+                UI.showToast(msg);
+                return;
+            }
+
+            const data = await res.json();
+            const query = `${data.artist} - ${data.title}`;
+            const searchInput = document.getElementById('main-search');
+            const clearBtn = document.getElementById('btn-clear-search');
+            searchInput.value = query;
+            clearBtn.classList.add('visible');
+            performSearch(query);
+        } catch (err) {
+            modal.style.display = 'none';
+            if (err.name === 'AbortError') {
+                UI.showToast("Request timed out — check your connection");
+            } else {
+                UI.showToast("Connection error — try again");
+            }
+            console.error("Hum-to-search error:", err);
+        }
+    };
 };
 
 document.addEventListener('DOMContentLoaded', initApp);

@@ -1,5 +1,7 @@
 import 'dart:convert';
+import 'dart:typed_data';
 import 'package:http/http.dart' as http;
+import 'package:http_parser/http_parser.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 class ApiClient {
@@ -132,6 +134,41 @@ class ApiClient {
         headers: headers,
         body: finalBody,
       );
+    }
+    return response;
+  }
+
+  Future<http.Response> postMultipart(
+    String endpoint, {
+    required String fileField,
+    required Uint8List fileBytes,
+    required String filename,
+    required String mimeType,
+    bool authenticated = true,
+    bool retryOn401 = true,
+  }) async {
+    Future<http.Response> _send(String? token) async {
+      final uri = Uri.parse('$baseUrl$endpoint');
+      final request = http.MultipartRequest('POST', uri);
+      if (token != null) request.headers['Authorization'] = 'Bearer $token';
+      request.files.add(http.MultipartFile.fromBytes(
+        fileField,
+        fileBytes,
+        filename: filename,
+        contentType: MediaType.parse(mimeType),
+      ));
+      return http.Response.fromStream(await request.send());
+    }
+
+    final token = authenticated ? await getToken() : null;
+    final response = await _send(token);
+
+    if (authenticated &&
+        retryOn401 &&
+        response.statusCode == 401 &&
+        _allowRefreshRetry(endpoint) &&
+        await _tryRefresh()) {
+      return _send(await getToken());
     }
     return response;
   }

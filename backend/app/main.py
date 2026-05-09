@@ -15,7 +15,7 @@ from app.error_handlers import register_exception_handlers
 from app.indexer import run_indexer
 from app.limiter_ext import limiter
 from app.middleware.request_context import RequestContextMiddleware
-from app.routers import auth, playlists, public_config, system, tracks
+from app.routers import ai, auth, playlists, public_config, system, tracks
 from app.utils.logger import setup_logger
 from app.watcher import start_watcher
 
@@ -94,6 +94,7 @@ app.include_router(auth.router, prefix=API_V1_PREFIX)
 app.include_router(tracks.router, prefix=API_V1_PREFIX)
 app.include_router(playlists.router, prefix=API_V1_PREFIX)
 app.include_router(system.router, prefix=API_V1_PREFIX)
+app.include_router(ai.router, prefix=API_V1_PREFIX)
 
 # Health Check (Legacy support or simple ping)
 @app.get("/health")

@@ -5,6 +5,7 @@ import '../../logic/blocs/search_bloc.dart';
 import 'library_screen.dart';
 import 'liked_songs_screen.dart';
 import '../widgets/track_list_tile.dart';
+import '../widgets/recording_overlay.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -41,6 +42,32 @@ class _SearchView extends StatefulWidget {
 class _SearchViewState extends State<_SearchView> {
   final TextEditingController _searchController = TextEditingController();
 
+  void _triggerHumSearch() {
+    final bloc = context.read<SearchBloc>();
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => RecordingOverlay(
+        repository: bloc.trackRepository,
+        onSuccess: (data) {
+          final query = '${data['artist']} - ${data['title']}';
+          _searchController.text = query;
+          bloc.add(SearchQueryChanged(query));
+        },
+        onError: (message) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(message),
+              backgroundColor: Colors.red[800],
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+        },
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -59,6 +86,12 @@ class _SearchViewState extends State<_SearchView> {
               decoration: InputDecoration(
                 hintText: 'Search for tracks...',
                 prefixIcon: const Icon(Icons.search),
+                suffixIcon: IconButton(
+                  icon: const Icon(Icons.mic),
+                  color: const Color(0xFF8B5CF6),
+                  tooltip: 'Hum to search',
+                  onPressed: _triggerHumSearch,
+                ),
                 filled: true,
                 fillColor: Colors.white.withValues(alpha: 0.05),
                 border: OutlineInputBorder(

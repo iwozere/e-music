@@ -16,7 +16,7 @@
     <!-- Lucide Icons CDN -->
     <script src="https://unpkg.com/lucide@latest"></script>
     <!-- Custom Style -->
-    <link rel="stylesheet" href="/static/style.css?v=2.9.19">
+    <link rel="stylesheet" href="/static/style.css?v=2.9.21">
 </head>
 
 <body>
@@ -80,6 +80,9 @@
                     <i data-lucide="search" class="search-icon"></i>
                     <input type="text" id="main-search" placeholder="Search for artists, songs, or podcasts..."
                         class="search-input">
+                    <button id="btn-hum-search" class="search-mic-btn" title="Hum to search">
+                        <i data-lucide="mic"></i>
+                    </button>
                     <button id="btn-clear-search" class="search-clear-btn" title="Clear Search">
                         <i data-lucide="x"></i>
                     </button>
@@ -173,13 +176,31 @@
         </div>
     </div>
 
+    <!-- Hum-to-search modal -->
+    <div id="hum-modal" class="modal-overlay">
+        <div class="modal hum-modal-inner">
+            <div id="hum-recording-state">
+                <div class="hum-wave">
+                    <span></span><span></span><span></span><span></span><span></span>
+                </div>
+                <div class="hum-countdown" id="hum-countdown">10</div>
+                <p class="hum-label">Hum or sing the melody...</p>
+                <button id="btn-hum-cancel" class="hum-cancel-btn">Cancel</button>
+            </div>
+            <div id="hum-identifying-state" style="display:none;">
+                <div class="hum-spinner"></div>
+                <p class="hum-label">Identifying melody...</p>
+            </div>
+        </div>
+    </div>
+
     <div id="toast" class="toast-container">Link copied!</div>
     <audio id="main-audio" preload="auto"></audio>
     <!-- App Logic -->
-    <script src="/static/api.js?v=2.9.19"></script>
+    <script src="/static/api.js?v=2.9.21"></script>
     <script src="/static/ui.js?v=2.9.19"></script>
     <script src="/static/player.js?v=2.9.19"></script>
-    <script src="/static/main.js?v=2.9.20"></script>
+    <script src="/static/main.js?v=2.9.21"></script>
 </body>
 
 </html>

@@ -66,6 +66,12 @@ class Settings(BaseSettings):
     # Model to use; llama-3.1-8b-instant is fast and free-tier friendly.
     GROQ_MODEL: str = "llama-3.1-8b-instant"
 
+    # --- Hum-to-Search (Gemini multimodal melody identification) ---
+    GEMINI_API_KEY: Optional[str] = None
+    GEMINI_MODEL: str = "gemini-2.5-flash"
+    # Minimum confidence score (0-100) to accept a Gemini identification result.
+    IDENTIFY_MIN_CONFIDENCE: int = 75
+
     # --- Prefetch / warm-cache (Feature 2: zero-latency next-track playback) ---
     PREFETCH_ENABLED: bool = True
     # Upper bound on concurrent prefetch jobs server-wide; guards the Pi's CPU/network.
