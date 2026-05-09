@@ -147,7 +147,7 @@ class ApiClient {
     bool authenticated = true,
     bool retryOn401 = true,
   }) async {
-    Future<http.Response> _send(String? token) async {
+    Future<http.Response> send(String? token) async {
       final uri = Uri.parse('$baseUrl$endpoint');
       final request = http.MultipartRequest('POST', uri);
       if (token != null) request.headers['Authorization'] = 'Bearer $token';
@@ -161,14 +161,14 @@ class ApiClient {
     }
 
     final token = authenticated ? await getToken() : null;
-    final response = await _send(token);
+    final response = await send(token);
 
     if (authenticated &&
         retryOn401 &&
         response.statusCode == 401 &&
         _allowRefreshRetry(endpoint) &&
         await _tryRefresh()) {
-      return _send(await getToken());
+      return send(await getToken());
     }
     return response;
   }

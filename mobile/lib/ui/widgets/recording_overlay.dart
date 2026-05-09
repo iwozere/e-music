@@ -29,7 +29,6 @@ class RecordingOverlay extends StatefulWidget {
 
 class _RecordingOverlayState extends State<RecordingOverlay> {
   static const _duration = 10;
-  static const _primary = Color(0xFF8B5CF6);
 
   final _recorder = AudioRecorder();
   _Phase _phase = _Phase.recording;
@@ -124,10 +123,7 @@ class _RecordingOverlayState extends State<RecordingOverlay> {
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 40),
         child: _phase == _Phase.recording
-            ? _RecordingContent(
-                countdown: _countdown,
-                onCancel: _cancel,
-              )
+            ? _RecordingContent(countdown: _countdown, onCancel: _cancel)
             : const _IdentifyingContent(),
       ),
     );
@@ -161,7 +157,10 @@ class _RecordingContent extends StatelessWidget {
         const SizedBox(height: 10),
         Text(
           'Hum or sing the melody…',
-          style: TextStyle(color: Colors.white.withValues(alpha: 0.6), fontSize: 15),
+          style: TextStyle(
+            color: Colors.white.withValues(alpha: 0.6),
+            fontSize: 15,
+          ),
         ),
         const SizedBox(height: 28),
         OutlinedButton(
@@ -169,7 +168,9 @@ class _RecordingContent extends StatelessWidget {
           style: OutlinedButton.styleFrom(
             foregroundColor: Colors.white54,
             side: const BorderSide(color: Colors.white24),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
             padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 10),
           ),
           child: const Text('Cancel'),
@@ -211,17 +212,20 @@ class _WaveBars extends StatefulWidget {
   State<_WaveBars> createState() => _WaveBarsState();
 }
 
-class _WaveBarsState extends State<_WaveBars> with SingleTickerProviderStateMixin {
+class _WaveBarsState extends State<_WaveBars>
+    with SingleTickerProviderStateMixin {
   late final AnimationController _ctrl;
 
   static const _maxHeights = [24.0, 44.0, 60.0, 44.0, 24.0];
-  static const _phases     = [0.00, 0.15, 0.30, 0.45, 0.60];
+  static const _phases = [0.00, 0.15, 0.30, 0.45, 0.60];
 
   @override
   void initState() {
     super.initState();
-    _ctrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 900))
-      ..repeat();
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+    )..repeat();
   }
 
   @override
@@ -236,7 +240,7 @@ class _WaveBarsState extends State<_WaveBars> with SingleTickerProviderStateMixi
       height: 64,
       child: AnimatedBuilder(
         animation: _ctrl,
-        builder: (_, __) {
+        builder: (_, _) {
           return Row(
             mainAxisAlignment: MainAxisAlignment.center,
             crossAxisAlignment: CrossAxisAlignment.end,
@@ -249,7 +253,9 @@ class _WaveBarsState extends State<_WaveBars> with SingleTickerProviderStateMixi
                 height: h,
                 margin: const EdgeInsets.symmetric(horizontal: 3),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF8B5CF6).withValues(alpha: 0.5 + 0.5 * scale),
+                  color: const Color(
+                    0xFF8B5CF6,
+                  ).withValues(alpha: 0.5 + 0.5 * scale),
                   borderRadius: BorderRadius.circular(4),
                 ),
               );
