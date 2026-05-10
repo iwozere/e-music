@@ -1,6 +1,4 @@
 """AI endpoints: hum-to-search melody identification."""
-from __future__ import annotations
-
 import asyncio
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
