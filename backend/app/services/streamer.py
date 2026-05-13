@@ -49,6 +49,9 @@ _youtube_fail_lock = threading.Lock()
 _youtube_stream_failures: Dict[str, tuple[float, str]] = {}
 _FAIL_CACHE_SECS = 90.0
 
+# Log a warning when a single ffmpeg-stdout read or a googlevideo chunk gap exceeds this.
+_STALL_WARN_MS = 2000
+
 
 def _youtube_fail_clear(video_id: str) -> None:
     with _youtube_fail_lock:
@@ -323,9 +326,20 @@ def _stream_resolved(
                     if response.status_code >= 400:
                         feeder_err.append(f"upstream {response.status_code}")
                         return
+                    t_last = time.monotonic()
+                    bytes_fed = 0
                     for chunk in response.iter_bytes(64 * 1024):
                         if not chunk:
                             continue
+                        now = time.monotonic()
+                        gap_ms = int((now - t_last) * 1000)
+                        if gap_ms >= _STALL_WARN_MS:
+                            _logger.warning(
+                                "streamer: feeder stall track=%s gap_ms=%d bytes_fed=%d",
+                                track_id, gap_ms, bytes_fed,
+                            )
+                        t_last = now
+                        bytes_fed += len(chunk)
                         try:
                             ff_proc.stdin.write(chunk)
                         except (BrokenPipeError, ValueError):
@@ -344,23 +358,55 @@ def _stream_resolved(
     feeder = threading.Thread(target=_feed_from_http, name=f"yt-feed-{track_id}", daemon=True)
     feeder.start()
 
+    prebuf_target = settings.STREAM_PREBUFFER_BYTES
+    prebuf: Optional[bytearray] = bytearray() if prebuf_target > 0 else None
+    t_last_chunk = time.monotonic()
+
     try:
         with open(download_path, "wb") as cache_file:
             while True:
                 chunk = ff_proc.stdout.read(16 * 1024)
+                t_got = time.monotonic()
                 if not chunk:
                     break
+
+                wait_ms = int((t_got - t_last_chunk) * 1000)
+                if wait_ms >= _STALL_WARN_MS:
+                    _logger.warning(
+                        "streamer: stdout stall path=%s track=%s stall_ms=%d bytes_yielded=%d",
+                        path_label, track_id, wait_ms, bytes_yielded,
+                    )
+                t_last_chunk = t_got
+
                 cache_file.write(chunk)
+
+                if prebuf is not None:
+                    prebuf.extend(chunk)
+                    if len(prebuf) < prebuf_target:
+                        continue
+                    chunk = bytes(prebuf)
+                    prebuf = None
+
                 if first_byte_ms is None:
-                    first_byte_ms = int((time.monotonic() - t_start) * 1000)
+                    first_byte_ms = int((t_got - t_start) * 1000)
                     _logger.info(
-                        "streamer: first byte path=%s track=%s elapsed_ms=%d",
-                        path_label,
-                        track_id,
-                        first_byte_ms,
+                        "streamer: first byte path=%s track=%s elapsed_ms=%d bytes=%d",
+                        path_label, track_id, first_byte_ms, len(chunk),
                     )
                 yield chunk
                 bytes_yielded += len(chunk)
+
+            # Flush any pre-buffer that didn't reach the target (short track or early EOF).
+            if prebuf and len(prebuf) > 0:
+                to_send = bytes(prebuf)
+                if first_byte_ms is None:
+                    first_byte_ms = int((time.monotonic() - t_start) * 1000)
+                    _logger.info(
+                        "streamer: first byte path=%s track=%s elapsed_ms=%d bytes=%d",
+                        path_label, track_id, first_byte_ms, len(to_send),
+                    )
+                yield to_send
+                bytes_yielded += len(to_send)
 
         ff_proc.wait()
         feeder.join(timeout=5)
@@ -453,21 +499,54 @@ def _stream_legacy_subprocess(
             _logger.error("streamer: legacy ffmpeg stdout missing for %s", track_id)
             return
 
+        prebuf_target = settings.STREAM_PREBUFFER_BYTES
+        prebuf: Optional[bytearray] = bytearray() if prebuf_target > 0 else None
+        t_last_chunk = time.monotonic()
+
         with open(download_path, "wb") as cache_file:
             while True:
                 chunk = ff_out.read(16 * 1024)
+                t_got = time.monotonic()
                 if not chunk:
                     break
+
+                wait_ms = int((t_got - t_last_chunk) * 1000)
+                if wait_ms >= _STALL_WARN_MS:
+                    _logger.warning(
+                        "streamer: stdout stall path=legacy-subprocess track=%s stall_ms=%d bytes_yielded=%d",
+                        track_id, wait_ms, bytes_yielded,
+                    )
+                t_last_chunk = t_got
+
                 cache_file.write(chunk)
+
+                if prebuf is not None:
+                    prebuf.extend(chunk)
+                    if len(prebuf) < prebuf_target:
+                        continue
+                    chunk = bytes(prebuf)
+                    prebuf = None
+
                 if first_byte_ms is None:
-                    first_byte_ms = int((time.monotonic() - t_start) * 1000)
+                    first_byte_ms = int((t_got - t_start) * 1000)
                     _logger.info(
-                        "streamer: first byte path=legacy-subprocess track=%s elapsed_ms=%d",
-                        track_id,
-                        first_byte_ms,
+                        "streamer: first byte path=legacy-subprocess track=%s elapsed_ms=%d bytes=%d",
+                        track_id, first_byte_ms, len(chunk),
                     )
                 yield chunk
                 bytes_yielded += len(chunk)
+
+            # Flush any pre-buffer that didn't reach the target (short track or early EOF).
+            if prebuf and len(prebuf) > 0:
+                to_send = bytes(prebuf)
+                if first_byte_ms is None:
+                    first_byte_ms = int((time.monotonic() - t_start) * 1000)
+                    _logger.info(
+                        "streamer: first byte path=legacy-subprocess track=%s elapsed_ms=%d bytes=%d",
+                        track_id, first_byte_ms, len(to_send),
+                    )
+                yield to_send
+                bytes_yielded += len(to_send)
 
         yt_proc.wait()
         ff_proc.wait()

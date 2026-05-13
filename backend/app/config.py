@@ -60,6 +60,10 @@ class Settings(BaseSettings):
     YTDLP_RESOLVED_URL_TTL_SEC: int = 18_000
     # Emergency kill-switch: force the legacy subprocess pipeline even when the resolver is up.
     STREAM_FORCE_LEGACY_SUBPROCESS: bool = False
+    # Bytes to accumulate from ffmpeg before sending the first HTTP chunk to the browser.
+    # A larger value gives the browser a bigger initial burst (more buffered audio) at the
+    # cost of a slightly higher start-up latency. 0 disables pre-buffering (legacy behaviour).
+    STREAM_PREBUFFER_BYTES: int = 256 * 1024
 
     # --- AI Shuffle (Groq LLM-backed radio mode) ---
     GROQ_API_KEY: Optional[str] = None

@@ -219,6 +219,8 @@ window.playTrack = async (trackId, title, artist, thumbnail) => {
             if (typeof UI !== 'undefined' && UI.showToast) {
                 UI.showToast('Log in to play music');
             }
+            const authModal = document.getElementById('auth-modal');
+            if (authModal) authModal.style.display = 'flex';
             state.isPlaying = false;
             UI.initIcons();
             return;
@@ -237,6 +239,8 @@ window.playTrack = async (trackId, title, artist, thumbnail) => {
             if (typeof UI !== 'undefined' && UI.showToast) {
                 UI.showToast('Session expired; please log in again');
             }
+            const authModal = document.getElementById('auth-modal');
+            if (authModal) authModal.style.display = 'flex';
             state.isPlaying = false;
             UI.initIcons();
             return;
