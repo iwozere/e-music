@@ -149,3 +149,57 @@ If logs show **Signature solving failed**, **n challenge solving failed**, **Onl
 
 - **Docker Engine:**  
   `docker version`
+
+---
+
+## Admin access and maintenance
+
+### Setting up the admin role
+
+Add your email to `.env` on the server:
+
+```
+ADMIN_EMAILS=your@email.com
+```
+
+Restart the container — `ensure_admin_roles()` runs on startup and upgrades your DB row automatically:
+
+```bash
+docker compose up -d --force-recreate backend
+```
+
+Then log out and back in to get a fresh JWT that carries the `admin` role (see below).
+
+### Getting your JWT token
+
+Open the app in a browser, open **DevTools → Application → Local Storage**, find the entry for the app's origin, and copy the value of `access_token`.
+
+### Logging out (no button in the UI)
+
+Open the browser DevTools console on the app and run:
+
+```js
+localStorage.clear(); location.reload();
+```
+
+This wipes stored tokens and returns you to the login screen.
+
+### Cleaning broken / partial cached tracks
+
+Partial downloads (from interrupted streams or crashes) are cleaned up automatically on container startup. To also fix DB rows that still say "cached" when the file is missing or was deleted:
+
+```bash
+curl -X POST https://api.e-music.win/api/v1/system/repair-stale-tracks \
+  -H "Authorization: Bearer <your_jwt_token>"
+```
+
+Requires admin role (see above). Returns a summary:
+
+```json
+{
+  "message": "Repair complete",
+  "deleted_stale_cache_index_rows": 0,
+  "cleared_missing_file_refs": 5,
+  "cleared_orphan_cache_flags": 2
+}
+```
