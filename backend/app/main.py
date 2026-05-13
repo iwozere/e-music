@@ -56,6 +56,16 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
                 "No tracks found in database! Please check your MUSIC_PATH or DB file."
             )
 
+    # Remove any *.download files left over from a crashed/interrupted stream.
+    import glob as _glob
+    for _stale in _glob.glob(os.path.join(settings.TEMP_DIR, "*.download")) + \
+                  _glob.glob(os.path.join(settings.CACHE_DIR, "*.download")):
+        try:
+            os.remove(_stale)
+            _logger.info("Removed stale partial download: %s", _stale)
+        except Exception:
+            pass
+
     _logger.info("Startup complete")
     yield
     _logger.info("Shutting down MySpotify Backend...")

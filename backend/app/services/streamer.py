@@ -411,14 +411,15 @@ def _stream_resolved(
         ff_proc.wait()
         feeder.join(timeout=5)
 
-        if ff_proc.returncode != 0:
+        ff_ok = ff_proc.returncode == 0
+        if not ff_ok:
             err = (ff_proc.stderr.read() if ff_proc.stderr else b"").decode(errors="replace").strip()
             _logger.error("streamer: ffmpeg exit=%d track=%s err=%s", ff_proc.returncode, track_id, err)
 
         if feeder_err:
             _logger.warning("streamer: feeder errors for %s: %s", track_id, "; ".join(feeder_err))
 
-        if bytes_yielded > 0 and os.path.exists(download_path):
+        if bytes_yielded > 0 and os.path.exists(download_path) and ff_ok and not feeder_err:
             if os.path.exists(final_path):
                 os.remove(final_path)
             os.rename(download_path, final_path)
