@@ -6,7 +6,10 @@
       "Bash(Get-ChildItem -Path \"C:\\\\dev\\\\cursor\\\\e-music\")",
       "Bash(Select-Object Name, FullName)",
       "Bash(grep -E \"\\\\.\\(py|txt|json|yaml\\)$\")",
-      "PowerShell(python --version; python -m pytest --version 2>&1)"
+      "PowerShell(python --version; python -m pytest --version 2>&1)",
+      "Bash(Get-ChildItem -Path \"C:\\\\dev\\\\cursor\\\\e-music\" -Recurse -Include \"*.ts\",\"*.tsx\",\"*.js\",\"*.jsx\",\"*.py\" -Exclude \".venv\",\"node_modules\")",
+      "Bash(Select-Object -ExpandProperty FullName)",
+      "Bash(Get-ChildItem -Path \"C:\\\\dev\\\\cursor\\\\e-music\" -Recurse -Directory)"
     ]
   }
 }

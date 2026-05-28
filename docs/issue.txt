@@ -1,0 +1,26 @@
+Breaking playback.
+
+  Proposed fix for the root cause
+
+  The pre-buffer reduces freeze frequency but doesn't eliminate the root cause, which is googlevideo CDN throttling datacenter IPs. The permanent fixes, in order of impact:
+
+  1. YouTube cookies (highest impact, zero code). Set YTDLP_COOKIES_FILE to a Netscape-format cookies.txt exported from a browser that is signed in to YouTube. googlevideo serves datacenter IPs at full speed when the request carries valid auth cookies, just like a real browser.
+  2. Increase STREAM_PREBUFFER_BYTES if freezes persist after cookies. 512 KB (≈ 32 s) adds only ~0.5 s to startup on a typical connection and eliminates almost all CDN burst gaps.
+  3. Add a threaded lookahead queue between ffmpeg stdout and the yield loop (more invasive, medium-term). A bounded queue.Queue lets a background thread drain ffmpeg as fast as it produces data while the yield loop feeds the browser at TCP rate. This decouples ffmpeg throughput
+  from HTTP backpressure and gives the browser a larger server-side buffer without holding more RAM than maxsize × 16 KB.
+
+
+backend-1  | 2026-05-13 10:23:05,511 - c6da4e76-db0a-4287-914d-21830b5a529a - app.routers.tracks - INFO - Streaming request for: 2b59fc0b-2931-46e9-bbbe-56f87e4b9b6d
+backend-1  | 2026-05-13 10:23:05,513 - c6da4e76-db0a-4287-914d-21830b5a529a - app.routers.tracks - INFO - Streaming from YouTube: -Y2ujUuYU2o
+backend-1  | 2026-05-13 10:23:10,156 - c6da4e76-db0a-4287-914d-21830b5a529a - app.services.yt_resolver - INFO - yt_resolver: resolved video_id=-Y2ujUuYU2o ext=m4a acodec=mp4a.40.2 elapsed_ms=4642 cache=miss clients=tv,web timing=misc:extracting:url@0,webpage@2,client_cfg:tv@1111,player_api:tv@1198,client_cfg:web@1375,player_api:web@2335,ejs@2547
+backend-1  | 2026-05-13 10:23:10,156 - c6da4e76-db0a-4287-914d-21830b5a529a - app.services.streamer - INFO - streamer: starting resolver pipeline track=-Y2ujUuYU2o ext=m4a acodec=mp4a.40.2
+backend-1  | 2026-05-13 10:23:14,161 - - - app.services.streamer - WARNING - streamer: feeder stall track=-Y2ujUuYU2o gap_ms=2154 bytes_fed=65536
+backend-1  | 2026-05-13 10:23:14,161 - c6da4e76-db0a-4287-914d-21830b5a529a - app.services.streamer - WARNING - streamer: stdout stall path=resolver+copy:adts track=-Y2ujUuYU2o stall_ms=2150 bytes_yielded=0
+backend-1  | 2026-05-13 10:23:18,125 - - - app.services.streamer - WARNING - streamer: feeder stall track=-Y2ujUuYU2o gap_ms=2024 bytes_fed=196608
+backend-1  | 2026-05-13 10:23:18,125 - c6da4e76-db0a-4287-914d-21830b5a529a - app.services.streamer - WARNING - streamer: stdout stall path=resolver+copy:adts track=-Y2ujUuYU2o stall_ms=2015 bytes_yielded=0
+backend-1  | 2026-05-13 10:23:20,193 - - - app.services.streamer - WARNING - streamer: feeder stall track=-Y2ujUuYU2o gap_ms=2068 bytes_fed=262144
+backend-1  | 2026-05-13 10:23:20,193 - c6da4e76-db0a-4287-914d-21830b5a529a - app.services.streamer - WARNING - streamer: stdout stall path=resolver+copy:adts track=-Y2ujUuYU2o stall_ms=2067 bytes_yielded=0
+backend-1  | 2026-05-13 10:23:20,194 - c6da4e76-db0a-4287-914d-21830b5a529a - app.services.streamer - INFO - streamer: first byte path=resolver+copy:adts track=-Y2ujUuYU2o elapsed_ms=10037 bytes=262144
+backend-1  | INFO:     172.21.0.3:0 - "GET /api/v1/tracks/stream/2b59fc0b-2931-46e9-bbbe-56f87e4b9b6d?exp=1778668385&sig=82db6eb002190a8fa5c90c5a539622efc97fa045e0c792704e741c369f1c46b1&uid=104443613129595322242 HTTP/1.1" 200 OK
+backend-1  | 2026-05-13 10:23:20,297 - 3ef56c0c-ce6a-415b-a718-0129f63224c3 - app.routers.tracks - INFO - User 104443613129595322242 played track 2b59fc0b-2931-46e9-bbbe-56f87e4b9b6d
+backend-1  | INFO:     172.21.0.3:0 - "POST /api/v1/tracks/2b59fc0b-2931-46e9-bbbe-56f87e4b9b6d/play HTTP/1.1" 200 OK

@@ -252,6 +252,9 @@ window.playTrack = async (trackId, title, artist, thumbnail) => {
             return;
         }
         const grantJson = await grantRes.json();
+        state.streamUrlExpiresAt = grantJson.expires_at
+            ? new Date(grantJson.expires_at).getTime()
+            : Date.now() + 600_000;
         let streamUrl = grantJson.stream_url;
         if (!streamUrl) {
             console.warn('[Player] stream/grant returned no stream_url');

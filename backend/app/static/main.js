@@ -249,9 +249,30 @@ const initEventListeners = () => {
     document.getElementById('btn-hum-search')?.addEventListener('click', triggerHumToSearch);
 
     // Player Buttons
-    document.getElementById('btn-play')?.addEventListener('click', () => {
+    document.getElementById('btn-play')?.addEventListener('click', async () => {
         const audio = document.getElementById('main-audio');
-        if (audio.paused) audio.play(); else audio.pause();
+        if (!audio) return;
+        if (audio.paused) {
+            // Re-grant if the signed URL has expired (TTL 10 min; user may have been away longer)
+            const expired = state.streamUrlExpiresAt && Date.now() >= state.streamUrlExpiresAt;
+            if (expired && state.currentTrack) {
+                const t = state.currentTrack;
+                await playTrack(t.id, t.title, t.artist, t.thumbnail);
+                return;
+            }
+            try {
+                await audio.play();
+            } catch (_) {
+                // play() rejected (e.g. URL expired mid-session) — re-grant and restart
+                if (state.currentTrack) {
+                    const t = state.currentTrack;
+                    await playTrack(t.id, t.title, t.artist, t.thumbnail);
+                    return;
+                }
+            }
+        } else {
+            audio.pause();
+        }
         UI.initIcons();
     });
     document.getElementById('btn-next')?.addEventListener('click', playNext);

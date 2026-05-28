@@ -365,7 +365,7 @@ def _stream_resolved(
     try:
         with open(download_path, "wb") as cache_file:
             while True:
-                chunk = ff_proc.stdout.read(16 * 1024)
+                chunk = ff_proc.stdout.read(64 * 1024)
                 t_got = time.monotonic()
                 if not chunk:
                     break
@@ -506,7 +506,7 @@ def _stream_legacy_subprocess(
 
         with open(download_path, "wb") as cache_file:
             while True:
-                chunk = ff_out.read(16 * 1024)
+                chunk = ff_out.read(64 * 1024)
                 t_got = time.monotonic()
                 if not chunk:
                     break
