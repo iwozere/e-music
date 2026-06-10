@@ -137,7 +137,7 @@ class _SecurityHeadersMiddleware(BaseHTTPMiddleware):
             "Content-Security-Policy",
             (
                 "default-src 'self'; "
-                "script-src 'self' 'unsafe-inline' accounts.google.com; "
+                "script-src 'self' 'unsafe-inline' accounts.google.com https://unpkg.com; "
                 "style-src 'self' 'unsafe-inline'; "
                 "img-src 'self' data: https:; "
                 "connect-src 'self' https://accounts.google.com; "
