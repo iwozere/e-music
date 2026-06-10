@@ -38,32 +38,53 @@ const PLAYER = {
         // Volume Control Init
         audio.volume = 0.8;
 
-        // Seeker Interaction
+        // Seeker Interaction — supports both click and pointer-drag (touch + mouse).
         const seekBar = document.getElementById('seek-bar');
         if (seekBar) {
-            seekBar.addEventListener('click', (e) => {
+            let seekDragging = false;
+            const applySeeek = (e) => {
                 const rect = seekBar.getBoundingClientRect();
-                const x = e.clientX - rect.left;
-                const percent = x / rect.width;
+                const percent = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
                 const d = audio.duration;
                 if (Number.isFinite(d) && d > 0) {
                     audio.currentTime = percent * d;
                 }
+            };
+            seekBar.addEventListener('pointerdown', (e) => {
+                seekDragging = true;
+                seekBar.setPointerCapture(e.pointerId);
+                applySeeek(e);
             });
+            seekBar.addEventListener('pointermove', (e) => {
+                if (!seekDragging) return;
+                applySeeek(e);
+            });
+            seekBar.addEventListener('pointerup', () => { seekDragging = false; });
+            seekBar.addEventListener('pointercancel', () => { seekDragging = false; });
         }
 
-        // Volume Interaction
+        // Volume Interaction — supports both click and pointer-drag (touch + mouse).
         const volumeSlider = document.getElementById('volume-slider');
         if (volumeSlider) {
-            volumeSlider.addEventListener('click', (e) => {
+            let volDragging = false;
+            const applyVolume = (e) => {
                 const rect = volumeSlider.getBoundingClientRect();
-                const x = e.clientX - rect.left;
-                const percent = Math.max(0, Math.min(1, x / rect.width));
+                const percent = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
                 audio.volume = percent;
-
                 const volumeFill = document.getElementById('volume-fill');
                 if (volumeFill) volumeFill.style.width = `${percent * 100}%`;
+            };
+            volumeSlider.addEventListener('pointerdown', (e) => {
+                volDragging = true;
+                volumeSlider.setPointerCapture(e.pointerId);
+                applyVolume(e);
             });
+            volumeSlider.addEventListener('pointermove', (e) => {
+                if (!volDragging) return;
+                applyVolume(e);
+            });
+            volumeSlider.addEventListener('pointerup', () => { volDragging = false; });
+            volumeSlider.addEventListener('pointercancel', () => { volDragging = false; });
         }
     },
 

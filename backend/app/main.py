@@ -5,8 +5,10 @@ from typing import AsyncGenerator
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.requests import Request as StarletteRequest
 
 from app.api_constants import API_V1_PREFIX
 from app.config import settings
@@ -92,11 +94,36 @@ app.add_middleware(
         f"https://api.{settings.DOMAIN}",
     ],
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-Request-ID"],
     expose_headers=["X-Request-ID"],
 )
 app.add_middleware(RequestContextMiddleware)
+
+
+class _SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    """Add defensive HTTP security headers to every response."""
+
+    async def dispatch(self, request: StarletteRequest, call_next):  # type: ignore[override]
+        response = await call_next(request)
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("X-Frame-Options", "DENY")
+        response.headers.setdefault("Referrer-Policy", "no-referrer")
+        response.headers.setdefault(
+            "Content-Security-Policy",
+            (
+                "default-src 'self'; "
+                "script-src 'self' 'unsafe-inline' accounts.google.com; "
+                "style-src 'self' 'unsafe-inline'; "
+                "img-src 'self' data: https:; "
+                "connect-src 'self' https://accounts.google.com; "
+                "media-src 'self' blob:;"
+            ),
+        )
+        return response
+
+
+app.add_middleware(_SecurityHeadersMiddleware)
 
 # Versioned JSON API
 app.include_router(public_config.router, prefix=API_V1_PREFIX)
@@ -106,10 +133,28 @@ app.include_router(playlists.router, prefix=API_V1_PREFIX)
 app.include_router(system.router, prefix=API_V1_PREFIX)
 app.include_router(ai.router, prefix=API_V1_PREFIX)
 
-# Health Check (Legacy support or simple ping)
+# Health Check — validates DB connectivity and cache directory availability.
 @app.get("/health")
-async def health() -> dict:
-    return {"status": "healthy"}
+async def health() -> JSONResponse:
+    from sqlmodel import Session, func, select
+    from app.db import engine
+    from app.models import Track
+
+    checks: dict = {}
+    try:
+        with Session(engine) as s:
+            s.exec(select(func.count()).select_from(Track)).one()
+        checks["db"] = "ok"
+    except Exception as exc:  # pylint: disable=broad-exception-caught
+        checks["db"] = f"error: {exc}"
+
+    checks["cache_dir"] = "ok" if os.path.isdir(settings.CACHE_DIR) else "missing"
+
+    healthy = all(v == "ok" for v in checks.values())
+    return JSONResponse(
+        content={"status": "healthy" if healthy else "degraded", "checks": checks},
+        status_code=200 if healthy else 503,
+    )
 
 
 # Mount the web frontend (Static HTML/JS/CSS)

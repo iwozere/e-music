@@ -1,5 +1,6 @@
 import typing
-from sqlmodel import create_engine, Session, SQLModel, select
+from sqlalchemy import event
+from sqlmodel import col, create_engine, Session, SQLModel, select
 
 from app.config import settings
 from app.utils.logger import setup_logger
@@ -14,6 +15,13 @@ else:
     connect_args = {}
 
 engine = create_engine(uri, connect_args=connect_args)
+
+if uri.startswith("sqlite"):
+    @event.listens_for(engine, "connect")
+    def _set_sqlite_pragmas(dbapi_conn, _):  # type: ignore[misc]
+        """Enable WAL mode for concurrent read/write without full table locks."""
+        dbapi_conn.execute("PRAGMA journal_mode=WAL")
+        dbapi_conn.execute("PRAGMA synchronous=NORMAL")
 
 def init_db() -> None:
     """
@@ -30,35 +38,19 @@ def init_db() -> None:
             os.makedirs(db_dir, exist_ok=True)
             
     SQLModel.metadata.create_all(engine)
-    
-    # Check for missing thumbnail column (Automatic Migration)
-    try:
-        from sqlalchemy import text, inspect
-        inspector = inspect(engine)
-        if "track" in inspector.get_table_names():
-            columns = [c["name"] for c in inspector.get_columns("track")]
-            if "thumbnail" not in columns:
-                _logger.info("Migrating database: Adding 'thumbnail' column to 'track' table")
-                with engine.begin() as conn:
-                    conn.execute(text("ALTER TABLE track ADD COLUMN thumbnail TEXT"))
-    except Exception:
-        _logger.exception("Automatic database migration failed")
 
 def ensure_admin_roles() -> None:
-    """
-    Promote any user whose email is listed in ADMIN_EMAILS to admin on startup.
-    """
-    from app.config import settings
+    """Promote users listed in ADMIN_EMAILS to admin on startup (targeted query, not full scan)."""
     from app.models import User
 
     allow = settings.admin_email_set()
     if not allow:
         return
     with Session(engine) as session:
-        users = session.exec(select(User)).all()
+        stmt = select(User).where(col(User.email).in_(list(allow)))
         changed = False
-        for u in users:
-            if u.email.strip().lower() in allow and u.role != "admin":
+        for u in session.exec(stmt).all():
+            if u.role != "admin":
                 u.role = "admin"
                 session.add(u)
                 changed = True
@@ -67,11 +59,10 @@ def ensure_admin_roles() -> None:
 
 
 def get_session() -> typing.Generator[Session, None, None]:
-    """
-    Dependency generator for database sessions.
-
-    Yields:
-        A new SQLModel Session instance.
-    """
+    """Dependency generator for database sessions with automatic rollback on error."""
     with Session(engine) as session:
-        yield session
+        try:
+            yield session
+        except Exception:
+            session.rollback()
+            raise

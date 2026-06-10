@@ -12,6 +12,8 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, R
 from sqlalchemy import desc
 from sqlmodel import Session, col, func, or_, select
 
+from app.services.ai_shuffle import get_ai_suggestions, resolve_suggestions_to_tracks
+
 from app.auth_utils import sign_stream_url, verify_stream_params
 from app.config import settings
 from app.db import get_session
@@ -53,9 +55,18 @@ def _looks_like_youtube_video_id(tid: str) -> bool:
     return all(c.isalnum() or c in "_-" for c in tid)
 
 
-# Internal Cache for Search
-SEARCH_CACHE: dict[str, dict[str, Any]] = {}
+# Internal Cache for Search — bounded to prevent OOM on long-running instances.
+# Evicts the entry with the earliest expiry when the cap is hit.
+_SEARCH_CACHE: dict[str, dict[str, Any]] = {}
+_SEARCH_CACHE_MAXSIZE = 256
 CACHE_TTL = 300  # 5 minutes
+
+
+def _search_cache_set(q: str, results: list, now: float) -> None:
+    if len(_SEARCH_CACHE) >= _SEARCH_CACHE_MAXSIZE:
+        oldest = min(_SEARCH_CACHE, key=lambda k: _SEARCH_CACHE[k]["expires"])
+        del _SEARCH_CACHE[oldest]
+    _SEARCH_CACHE[q] = {"results": results, "expires": now + CACHE_TTL}
 
 
 class _YoutubeMergeParams(NamedTuple):
@@ -78,15 +89,16 @@ def _filter_local_tracks_for_query(tracks: List[Track], q_lower: str) -> List[Tr
 async def _get_cached_or_fetch_youtube(q: str) -> list:
     """Return cached YouTube search results or fetch (with in-memory TTL cache)."""
     now = datetime.now().timestamp()
-    if q in SEARCH_CACHE and SEARCH_CACHE[q]["expires"] > now:
-        return SEARCH_CACHE[q]["results"]
+    cached = _SEARCH_CACHE.get(q)
+    if cached and cached["expires"] > now:
+        return cached["results"]
     try:
         yt_data = await asyncio.to_thread(search_youtube, q, limit=100)
     except Exception:  # pylint: disable=broad-exception-caught
         # ytmusic / network stack may raise arbitrary exceptions
         _logger.exception("YouTube Search Error")
         return []
-    SEARCH_CACHE[q] = {"results": yt_data, "expires": now + CACHE_TTL}
+    _search_cache_set(q, yt_data, now)
     return yt_data
 
 
@@ -256,22 +268,43 @@ async def _resolved_stream_for_track(
     )
 
 
+def _local_search_where(q_lower: str):  # type: ignore[return]
+    """SQLAlchemy WHERE clause for a case-insensitive substring search across track fields.
+
+    SQLite's lower() handles ASCII; Cyrillic is matched as-is (exact-case from stored tags).
+    The over-fetch factor in _merge_youtube_with_dedup compensates for any edge-case misses.
+    """
+    pattern = f"%{q_lower}%"
+    return or_(
+        func.lower(col(Track.title)).like(pattern),
+        func.lower(col(Track.artist)).like(pattern),
+        func.lower(col(Track.album)).like(pattern),
+    )
+
+
 async def _search_tracks_core(
     session: Session, q: str, offset: int, limit: int, start_time: float
 ) -> List[dict]:
     """Load local + YouTube rows for one search page (no liked flags)."""
     q_lower = q.lower()
-    all_local_db = session.exec(select(Track)).all()
-    all_local = _filter_local_tracks_for_query(all_local_db, q_lower)
+    where = _local_search_where(q_lower)
 
-    local_count = len(all_local)
+    # COUNT query so we can calculate yt_offset without loading all rows.
+    local_count: int = session.exec(
+        select(func.count()).select_from(Track).where(where)
+    ).one()
+
     _logger.info(
         "Local search complete in %.3fs: %s matches.",
         time.time() - start_time,
         local_count,
     )
 
-    local_results = all_local[offset : offset + limit] if offset < local_count else []
+    local_results: List[Track] = []
+    if offset < local_count:
+        local_results = list(
+            session.exec(select(Track).where(where).offset(offset).limit(limit)).all()
+        )
 
     needed_from_yt = limit - len(local_results)
     yt_offset = max(0, offset - local_count)
@@ -294,8 +327,8 @@ async def _search_tracks_core(
 async def search(
     request: Request,
     q: str,
-    offset: int = 0,
-    limit: int = 20,
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=20, ge=1, le=100),
     session: Session = Depends(get_session),
     current_user: Optional[User] = Depends(get_optional_user),
 ) -> List[dict]:
@@ -326,8 +359,8 @@ async def search(
 
 @router.get("/popular")
 async def get_popular_tracks(
-    offset: int = 0,
-    limit: int = 20,
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=20, ge=1, le=100),
     session: Session = Depends(get_session),
     current_user: Optional[User] = Depends(get_optional_user),
 ) -> List[dict]:
@@ -407,8 +440,8 @@ async def like_track(
 
 @router.get("/recent")
 async def get_recent_tracks(
-    offset: int = 0,
-    limit: int = 20,
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=20, ge=1, le=100),
     session: Session = Depends(get_session),
     current_user: Optional[User] = Depends(get_optional_user),
 ) -> List[dict]:
@@ -680,8 +713,6 @@ async def ai_shuffle(
     Return up to 10 AI-suggested tracks based on the provided playback context.
     Uses Groq (Llama) to infer genre/mood, then resolves each suggestion via YouTube Music.
     """
-    from app.services.ai_shuffle import get_ai_suggestions, resolve_suggestions_to_tracks
-
     context_tracks: List[dict] = []
 
     if body.track_ids:

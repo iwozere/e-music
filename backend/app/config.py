@@ -1,6 +1,8 @@
 """Environment-driven application settings (Pydantic ``BaseSettings``)."""
 
+import warnings
 from typing import Optional
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -81,15 +83,21 @@ class Settings(BaseSettings):
     # Upper bound on concurrent prefetch jobs server-wide; guards the Pi's CPU/network.
     PREFETCH_MAX_CONCURRENT: int = 2
 
+    @field_validator("JWT_SECRET")
+    @classmethod
+    def jwt_secret_strength(cls, v: str) -> str:
+        if len(v) < 32:
+            warnings.warn(
+                f"JWT_SECRET is only {len(v)} characters — use at least 32 random characters "
+                "in production (e.g. `python -c \"import secrets; print(secrets.token_hex(32))\"`)",
+                stacklevel=2,
+            )
+        return v
+
     @classmethod
     def strip_variables(cls, values: dict) -> dict:
-        """
-        Sanitize input values by stripping whitespace from all strings.
-        """
-        for key, value in values.items():
-            if isinstance(value, str):
-                values[key] = value.strip()
-        return values
+        """Sanitize input values by stripping whitespace from all strings."""
+        return {k: v.strip() if isinstance(v, str) else v for k, v in values.items()}
 
     def __init__(self, **values):
         """Instantiate settings from keyword arguments (typically env-backed), trimming strings."""

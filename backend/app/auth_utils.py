@@ -92,7 +92,11 @@ def verify_token(token: str) -> Optional[dict]:
 
 
 def hash_refresh_token(raw: str) -> str:
-    return hashlib.sha256(f"{raw}:{settings.JWT_SECRET}".encode()).hexdigest()
+    return hmac.new(
+        settings.JWT_SECRET.encode(),
+        raw.encode(),
+        hashlib.sha256,
+    ).hexdigest()
 
 
 def create_refresh_token_raw() -> str:
