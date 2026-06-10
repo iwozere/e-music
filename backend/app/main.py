@@ -35,6 +35,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     init_db()
     ensure_admin_roles()
 
+    # Clear stale is_cached flags whose files were lost (e.g. /tmp wiped on container restart).
+    from app.services.track_repair import repair_stale_tracks
+    _repair_stats = repair_stale_tracks()
+    _logger.info("Startup cache repair: %s", _repair_stats)
+
     # Run indexer on startup in background
     indexing_thread = threading.Thread(target=run_indexer, daemon=True)
     indexing_thread.start()

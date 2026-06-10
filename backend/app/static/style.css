@@ -1058,3 +1058,8 @@ body {
 @keyframes humSpin {
     to { transform: rotate(360deg); }
 }
+
+.spin {
+    animation: humSpin 0.75s linear infinite;
+    display: inline-block;
+}
