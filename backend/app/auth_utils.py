@@ -5,7 +5,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Tuple
 
-from jose import jwt
+import jwt
 from passlib.context import CryptContext
 from sqlmodel import Session, select
 
@@ -83,7 +83,7 @@ def verify_token(token: str) -> Optional[dict]:
             token, settings.JWT_SECRET, algorithms=[settings.ALGORITHM]
         )
         return payload
-    except (jwt.JWSError, jwt.JWTError):
+    except jwt.InvalidTokenError:
         _logger.warning("Invalid or malformed JWT token provided")
         return None
     except Exception:

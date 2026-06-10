@@ -8,7 +8,7 @@ from typing import Any, List, NamedTuple, Optional, Set
 from uuid import uuid4
 from urllib.parse import quote
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, Response
 from sqlalchemy import desc
 from sqlmodel import Session, col, func, or_, select
 
@@ -158,6 +158,29 @@ def _merge_youtube_with_dedup(  # pylint: disable=too-many-locals
                 final_results.append(yt_item)
 
     return final_results
+
+
+async def _backfill_thumbnails(track_ids: List[str]) -> None:
+    """Fetch and persist missing thumbnails for YouTube tracks (runs as a background task)."""
+    from app.db import engine
+    from sqlmodel import Session as _Session
+    results: List[tuple] = []
+    for tid in track_ids:
+        thumb = await get_track_thumbnail(tid)
+        if thumb:
+            results.append((tid, thumb))
+    if not results:
+        return
+    try:
+        with _Session(engine) as s:
+            for remote_id, thumb in results:
+                track = s.exec(select(Track).where(Track.remote_id == remote_id)).first()
+                if track and not track.thumbnail:
+                    track.thumbnail = thumb
+                    s.add(track)
+            s.commit()
+    except Exception:  # pylint: disable=broad-exception-caught
+        _logger.exception("Thumbnail backfill failed")
 
 
 def _apply_is_liked_flags(session: Session, user: User, items: List[dict]) -> None:
@@ -326,6 +349,7 @@ async def _search_tracks_core(
 @limiter.limit("90/minute")
 async def search(
     request: Request,
+    response: Response,
     q: str,
     offset: int = Query(default=0, ge=0),
     limit: int = Query(default=20, ge=1, le=100),
@@ -338,6 +362,7 @@ async def search(
     """
     if not q or not q.strip():
         _logger.info("Empty search query received, returning empty list")
+        response.headers["X-Has-More"] = "false"
         return []
 
     start_time = time.time()
@@ -347,6 +372,8 @@ async def search(
 
     if current_user:
         _apply_is_liked_flags(session, current_user, final_results)
+
+    response.headers["X-Has-More"] = "true" if len(final_results) >= limit else "false"
 
     _logger.info(
         "Search returned %s total results in %.3fs for: %s",
@@ -562,12 +589,11 @@ async def prefetch_track(
 
 @router.get("/liked")
 async def get_liked_tracks(
+    background_tasks: BackgroundTasks,
     session: Session = Depends(get_session),
     current_user: User = Depends(get_current_user),
 ) -> List[dict]:
-    """
-    Fetch all tracks that the current user has 'liked', with thumbnail backfill.
-    """
+    """Fetch all liked tracks; missing thumbnails are backfilled asynchronously."""
     statement = (
         select(Track)
         .join(UserActivity)
@@ -577,24 +603,14 @@ async def get_liked_tracks(
         )
     )
     liked_tracks = session.exec(statement).all()
+    results = [t.model_dump() for t in liked_tracks]
 
-    results = []
-    updated = False
-    for t in liked_tracks:
-        track_dict = t.model_dump()
-        # Proactive Backfill: If YT track missing thumbnail, fetch it now
-        if t.source_type == "youtube" and not t.thumbnail and t.remote_id:
-            thumb = await get_track_thumbnail(t.remote_id)
-            if thumb:
-                t.thumbnail = thumb
-                track_dict["thumbnail"] = thumb
-                session.add(t)
-                updated = True
-
-        results.append(track_dict)
-
-    if updated:
-        session.commit()
+    missing = [
+        t.remote_id for t in liked_tracks
+        if t.source_type == "youtube" and not t.thumbnail and t.remote_id
+    ]
+    if missing:
+        background_tasks.add_task(_backfill_thumbnails, missing)
 
     return results
 
@@ -792,10 +808,12 @@ async def ai_shuffle(
 
 @router.get("/{track_id}")
 # Intentionally no rate limit (metadata fetches are lightweight; search is limited).
-async def get_track(track_id: str, session: Session = Depends(get_session)) -> dict:
-    """
-    Fetch metadata for a single track by ID (internal or remote).
-    """
+async def get_track(
+    track_id: str,
+    background_tasks: BackgroundTasks,
+    session: Session = Depends(get_session),
+) -> dict:
+    """Fetch metadata for a single track by ID (internal or remote)."""
     statement = select(Track).where(
         or_(Track.id == track_id, Track.remote_id == track_id)
     )
@@ -805,12 +823,7 @@ async def get_track(track_id: str, session: Session = Depends(get_session)) -> d
         raise HTTPException(status_code=404, detail="Track not found")
 
     if track.source_type == "youtube" and not track.thumbnail and track.remote_id:
-        thumb = await get_track_thumbnail(track.remote_id)
-        if thumb:
-            track.thumbnail = thumb
-            session.add(track)
-            session.commit()
-            session.refresh(track)
+        background_tasks.add_task(_backfill_thumbnails, [track.remote_id])
 
     return track.model_dump()
 

@@ -1,3 +1,4 @@
+import asyncio
 import os
 import threading
 from contextlib import asynccontextmanager
@@ -68,8 +69,26 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         except Exception:
             pass
 
+    # PlayHistory retention: prune rows older than 90 days every 24 hours.
+    async def _prune_play_history() -> None:
+        from sqlalchemy import text
+        from app.db import engine
+        while True:
+            await asyncio.sleep(24 * 3600)
+            try:
+                with engine.begin() as conn:
+                    conn.execute(
+                        text("DELETE FROM playhistory WHERE played_at < datetime('now', '-90 days')")
+                    )
+                    _logger.info("PlayHistory pruned (rows older than 90 days removed)")
+            except Exception:  # pylint: disable=broad-exception-caught
+                _logger.exception("PlayHistory prune task failed")
+
+    prune_task = asyncio.create_task(_prune_play_history())
+
     _logger.info("Startup complete")
     yield
+    prune_task.cancel()
     _logger.info("Shutting down MySpotify Backend...")
 
 
@@ -96,7 +115,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type", "X-Request-ID"],
-    expose_headers=["X-Request-ID"],
+    expose_headers=["X-Request-ID", "X-Has-More"],
 )
 app.add_middleware(RequestContextMiddleware)
 

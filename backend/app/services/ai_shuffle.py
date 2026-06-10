@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+import time
 from typing import Dict, List
 
 import httpx
@@ -15,6 +16,10 @@ from app.utils.logger import setup_logger
 _logger = setup_logger(__name__)
 
 _GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
+
+# Simple circuit breaker: open after 3 consecutive failures, reset after 60 s.
+_groq_fail_count = 0
+_groq_open_until = 0.0
 
 
 def _format_track_list(tracks: List[Dict]) -> str:
@@ -28,8 +33,14 @@ def _format_track_list(tracks: List[Dict]) -> str:
 
 async def get_ai_suggestions(tracks: List[Dict]) -> List[Dict[str, str]]:
     """Call Groq with the track sequence and return [{artist, title}] suggestions."""
+    global _groq_fail_count, _groq_open_until  # pylint: disable=global-statement
+
     if not settings.GROQ_API_KEY:
         _logger.warning("GROQ_API_KEY not configured — AI shuffle unavailable")
+        return []
+
+    if time.monotonic() < _groq_open_until:
+        _logger.warning("AI shuffle circuit open — skipping Groq call (retry after %.0fs)", _groq_open_until - time.monotonic())
         return []
 
     track_list_str = _format_track_list(tracks)
@@ -81,11 +92,18 @@ async def get_ai_suggestions(tracks: List[Dict]) -> List[Dict[str, str]]:
                         _logger.warning("Groq response JSON unparseable even after extraction")
 
             if isinstance(suggestions, list):
+                _groq_fail_count = 0  # reset on success
                 return [
                     s for s in suggestions
                     if isinstance(s, dict) and s.get("artist") and s.get("title")
                 ]
     except Exception:
+        _groq_fail_count += 1
+        if _groq_fail_count >= 3:
+            _groq_open_until = time.monotonic() + 60.0
+            _logger.error(
+                "AI shuffle circuit opened after %d failures; will retry in 60s", _groq_fail_count
+            )
         _logger.exception("Groq AI shuffle request failed")
     return []
 

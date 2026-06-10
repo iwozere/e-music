@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from typing import Optional, List
+from typing import Literal, Optional, List
 from sqlmodel import SQLModel, Field, Relationship, Column, Integer
 
 class RefreshToken(SQLModel, table=True):
@@ -41,7 +41,7 @@ class Track(SQLModel, table=True):
     title: str = Field(index=True)
     artist: Optional[str] = Field(default=None, index=True)
     album: Optional[str] = Field(default=None, index=True)
-    source_type: str  # 'local', 'youtube'
+    source_type: Literal["local", "youtube"]
     remote_id: Optional[str] = Field(default=None, unique=True, index=True)
     local_path: Optional[str] = None
     is_cached: bool = Field(default=False)

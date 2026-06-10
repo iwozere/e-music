@@ -65,9 +65,10 @@ const performSearch = async (query, append = false) => {
             return loadHome();
         }
 
-        // Stop only on a genuinely empty page — a short page can be caused by deduplication
-        // on the server side, not necessarily exhausted results.
-        state.searchMeta.hasMore = tracks.length > 0;
+        // Use server-provided X-Has-More header for pagination accuracy;
+        // fall back to tracks.length > 0 for endpoints that don't set it.
+        const hasMoreHeader = res.headers.get('X-Has-More');
+        state.searchMeta.hasMore = hasMoreHeader !== null ? hasMoreHeader === 'true' : tracks.length > 0;
 
         let title = append ? null : (state.currentView === 'home' ? null : null);
         UI.renderTracks(tracks, title, append);
@@ -108,12 +109,15 @@ const initApp = async () => {
     const hashParams = new URLSearchParams(hashPart);
     const accessFromHash = hashParams.get('access_token') || hashParams.get('token');
     const refreshFromHash = hashParams.get('refresh_token');
+    // Security trade-off: tokens stored in localStorage are accessible to any JS on this
+    // origin (XSS risk). For a self-hosted instance this is acceptable; the alternative is
+    // HttpOnly cookies with SameSite=Strict. history.replaceState below clears tokens from
+    // the URL immediately so they don't persist in browser history.
     const token = localStorage.getItem('token') || accessFromHash;
     if (refreshFromHash) {
         localStorage.setItem('refresh_token', refreshFromHash);
     }
     if (token) {
-        console.log('[Auth] Token detected, verifying...');
         localStorage.setItem('token', token);
         window.history.replaceState(null, null, window.location.pathname);
         try {

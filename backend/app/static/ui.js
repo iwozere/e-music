@@ -59,7 +59,25 @@ const UI = {
         }
 
         if (!append && (!tracks || tracks.length === 0)) {
-            list.innerHTML = '<div style="grid-column: 1/-1; text-align: center; padding: 40px; color: var(--text-muted);">No tracks found</div>';
+            const _esc = (s) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+            const view = state.currentView;
+            const query = state.searchMeta && state.searchMeta.query;
+            let icon, heading, sub;
+            if (view === 'search' && query) {
+                icon = 'search-x'; heading = `No results for &ldquo;${_esc(query)}&rdquo;`; sub = 'Try a different term or hum the melody.';
+            } else if (view === 'liked') {
+                icon = 'heart'; heading = 'No liked tracks yet'; sub = 'Tap ♥ on any track to save it here.';
+            } else if (view === 'recent') {
+                icon = 'clock'; heading = 'Nothing added recently'; sub = 'Tracks you add or index will appear here.';
+            } else {
+                icon = 'music-2'; heading = 'No tracks found'; sub = 'Add music to your library to get started.';
+            }
+            list.innerHTML = `<div class="empty-state animate-fade" style="grid-column: 1/-1;">
+                <i data-lucide="${icon}" style="width: 48px; height: 48px; color: var(--text-muted); margin-bottom: 20px;"></i>
+                <h2>${heading}</h2>
+                <p>${sub}</p>
+            </div>`;
+            UI.initIcons();
             return;
         }
 

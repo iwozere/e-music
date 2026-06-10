@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import json
 import re
+import time
 
 from google import genai
 from google.genai import types
@@ -12,6 +13,10 @@ from app.config import settings
 from app.utils.logger import setup_logger
 
 _logger = setup_logger(__name__)
+
+# Circuit breaker: open after 3 consecutive failures, reset after 60 s.
+_gemini_fail_count = 0
+_gemini_open_until = 0.0
 
 ALLOWED_MIME_TYPES: frozenset[str] = frozenset({
     "audio/wav",
@@ -74,15 +79,28 @@ def _call_gemini_sync(audio_bytes: bytes, mime_type: str) -> str:
 async def identify_melody(audio_bytes: bytes, mime_type: str) -> dict:
     """
     Send audio inline to Gemini and return parsed identification result.
-    Raises RuntimeError if GEMINI_API_KEY is not set.
+    Raises RuntimeError if GEMINI_API_KEY is not set or circuit is open.
     Any Gemini SDK exception propagates to the caller (logged in the router).
     """
+    global _gemini_fail_count, _gemini_open_until  # pylint: disable=global-statement
+
     if not settings.GEMINI_API_KEY:
         raise RuntimeError("GEMINI_API_KEY is not configured")
 
+    if time.monotonic() < _gemini_open_until:
+        remaining = _gemini_open_until - time.monotonic()
+        raise RuntimeError(f"Gemini circuit open — retry in {remaining:.0f}s")
+
     try:
         raw_text = await asyncio.to_thread(_call_gemini_sync, audio_bytes, mime_type)
+        _gemini_fail_count = 0  # reset on success
     except Exception as exc:
+        _gemini_fail_count += 1
+        if _gemini_fail_count >= 3:
+            _gemini_open_until = time.monotonic() + 60.0
+            _logger.error(
+                "Gemini circuit opened after %d failures; will retry in 60s", _gemini_fail_count
+            )
         _logger.error("Gemini API call failed (%s): %s", type(exc).__name__, exc)
         raise
 
