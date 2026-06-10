@@ -1059,7 +1059,12 @@ body {
     to { transform: rotate(360deg); }
 }
 
-.spin {
-    animation: humSpin 0.75s linear infinite;
+.btn-spinner {
+    width: 18px;
+    height: 18px;
+    border: 2px solid rgba(255, 255, 255, 0.3);
+    border-top-color: #fff;
+    border-radius: 50%;
     display: inline-block;
+    animation: humSpin 0.75s linear infinite;
 }

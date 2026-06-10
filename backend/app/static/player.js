@@ -236,8 +236,7 @@ window.playTrack = async (trackId, title, artist, thumbnail) => {
 
     if (audio) {
         if (playBtn) {
-            playBtn.innerHTML = '<i data-lucide="loader-2" class="spin"></i>';
-            UI.initIcons();
+            playBtn.innerHTML = '<span class="btn-spinner"></span>';
         }
 
         const token = localStorage.getItem('token');
