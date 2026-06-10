@@ -1,6 +1,12 @@
 from datetime import datetime, timezone
-from typing import Literal, Optional, List
+from enum import Enum
+from typing import Optional, List
 from sqlmodel import SQLModel, Field, Relationship, Column, Integer
+
+
+class SourceType(str, Enum):
+    local = "local"
+    youtube = "youtube"
 
 class RefreshToken(SQLModel, table=True):
     """
@@ -41,7 +47,7 @@ class Track(SQLModel, table=True):
     title: str = Field(index=True)
     artist: Optional[str] = Field(default=None, index=True)
     album: Optional[str] = Field(default=None, index=True)
-    source_type: Literal["local", "youtube"]
+    source_type: SourceType
     remote_id: Optional[str] = Field(default=None, unique=True, index=True)
     local_path: Optional[str] = None
     is_cached: bool = Field(default=False)
