@@ -117,6 +117,9 @@ const API = {
 
     getPublicConfig: () => fetch(`${CONFIG.apiBase}/config`),
 
+    // Standalone Edition: auto-login the local single-user account (loopback-only on the backend).
+    localLogin: () => fetch(`${CONFIG.apiBase}/auth/local`, { method: 'POST' }),
+
     aiShuffle: (trackIds) =>
         apiFetch('/tracks/ai-shuffle', {
             method: 'POST',

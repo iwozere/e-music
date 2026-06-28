@@ -36,6 +36,40 @@ _logger = setup_logger(__name__)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
+# Standalone Edition (docs/features-v7.md §4): a single local user the desktop app
+# auto-logs into, with no password and admin role. Fixed id keeps FK references stable.
+LOCAL_USER_ID = "local"
+_LOOPBACK_HOSTS = {"127.0.0.1", "::1", "localhost"}
+
+
+def _is_local_request(request: Request) -> bool:
+    """True when the request comes from the loopback interface (defense-in-depth for /auth/local)."""
+    client = request.client
+    return client is not None and client.host in _LOOPBACK_HOSTS
+
+
+def get_or_create_local_user(session: Session) -> User:
+    """Fetch (or provision on first run) the single standalone local user."""
+    user = session.get(User, LOCAL_USER_ID)
+    if user:
+        if user.role != "admin":
+            user.role = "admin"
+            session.add(user)
+            session.commit()
+            session.refresh(user)
+        return user
+    user = User(
+        id=LOCAL_USER_ID,
+        username="local",
+        email="local@myspotify.local",
+        hashed_password=None,
+        role="admin",
+    )
+    session.add(user)
+    session.commit()
+    session.refresh(user)
+    return user
+
 
 def _role_for_email(email: str) -> str:
     e = email.strip().lower()
@@ -112,6 +146,40 @@ async def login_for_access_token(
         "refresh_token": refresh_token,
         "token_type": "bearer",
         "expires_in": expires_in,
+    }
+
+
+@router.post("/local")
+async def local_login(
+    request: Request,
+    session: Session = Depends(get_session),
+) -> dict:
+    """
+    Standalone single-user auto-login (docs/features-v7.md §4).
+
+    Returns access + refresh tokens for the local user with no credentials. Available only in
+    the standalone profile and only from loopback — returns 404 in the server profile so the
+    endpoint is invisible there.
+    """
+    if not settings.is_standalone():
+        raise HTTPException(status_code=404, detail="Not found")
+    if not _is_local_request(request):
+        raise HTTPException(status_code=403, detail="Local login is only available on loopback")
+
+    user = get_or_create_local_user(session)
+    access_token, refresh_token, expires_in = issue_access_and_refresh(session, user)
+    session.commit()
+    return {
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+        "token_type": "bearer",
+        "expires_in": expires_in,
+        "user": {
+            "id": user.id,
+            "username": user.username,
+            "email": user.email,
+            "role": user.role,
+        },
     }
 
 

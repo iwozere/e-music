@@ -95,6 +95,7 @@ MySpotify is a self-hosted music stack with a centralized backend and multiple c
 | :------- | :----- | :--- | :---------- |
 | `/api/v1/auth/register` | POST | — | Register (username, email, password). 5/min. |
 | `/api/v1/auth/token` | POST | — | OAuth2 login; returns access + refresh tokens. 15/min. |
+| `/api/v1/auth/local` | POST | — | **Standalone only:** auto-login the local single-user account; returns access + refresh tokens. Loopback-only; 404 in the server profile. See [features-v7.md](features-v7.md). |
 | `/api/v1/auth/refresh` | POST | — | Rotate refresh token. 30/min. |
 | `/api/v1/auth/logout` | POST | — | Revoke refresh token (no-op safe). |
 | `/api/v1/auth/me` | GET | JWT | Current user profile. |
@@ -107,7 +108,7 @@ MySpotify is a self-hosted music stack with a centralized backend and multiple c
 
 | Endpoint | Method | Auth | Description |
 | :------- | :----- | :--- | :---------- |
-| `/api/v1/config` | GET | — | Public client settings (Google client ID, API base URL, version). |
+| `/api/v1/config` | GET | — | Public client settings (Google client ID, API base URL, version, plus `profile` and `auth_mode` for the web UI's login flow). |
 
 ### Tracks & playback
 

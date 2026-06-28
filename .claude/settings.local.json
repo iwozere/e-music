@@ -16,7 +16,11 @@
       "Bash(git push *)",
       "PowerShell(git *)",
       "Bash(PYTHONPATH=. ../.venv/Scripts/python.exe \"C:/Users/akoss/AppData/Local/Temp/claude/C--dev-cursor-e-music/1a0e10ff-75d3-4ab8-afa3-97b4c0fd9a4a/scratchpad/throttle_test.py\")",
-      "Bash(grep -vE \"WARNING|^\\\\s*$\")"
+      "Bash(grep -vE \"WARNING|^\\\\s*$\")",
+      "Bash(git --no-pager show 0674fcc --stat)",
+      "Bash(git --no-pager grep -c \"APP_PROFILE\" 0674fcc -- backend/app/config.py)",
+      "Bash(../.venv/Scripts/python.exe *)",
+      "Bash(/c/dev/cursor/e-music/.venv/Scripts/python.exe *)"
     ]
   }
 }

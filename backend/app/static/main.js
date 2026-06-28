@@ -1,5 +1,5 @@
 // main.js - Entry Point
-console.log("MySpotify v2.9.27");
+console.log("MySpotify v2.9.28");
 
 const state = {
     user: null,
@@ -155,7 +155,9 @@ const initApp = async () => {
         if (configRes.ok) {
             const sysConfig = await configRes.json();
             CONFIG.googleClientId = sysConfig.google_client_id;
-            console.log('[App] System config loaded.');
+            CONFIG.authMode = sysConfig.auth_mode;
+            CONFIG.profile = sysConfig.profile;
+            console.log('[App] System config loaded. Profile:', sysConfig.profile, 'auth:', sysConfig.auth_mode);
         } else {
             console.warn('[App] Failed to fetch system config:', configRes.status);
         }
@@ -163,7 +165,27 @@ const initApp = async () => {
         console.error('[App] Error during system config fetch:', e);
     }
 
-    if (!state.user) {
+    // Standalone Edition: silently auto-login the local single-user account (no login screen).
+    if (!state.user && CONFIG.authMode === 'local') {
+        try {
+            const res = await API.localLogin();
+            if (res.ok) {
+                const data = await res.json();
+                localStorage.setItem('token', data.access_token);
+                if (data.refresh_token) localStorage.setItem('refresh_token', data.refresh_token);
+                state.user = data.user || (await (await API.checkAuth(data.access_token)).json());
+                document.getElementById('auth-modal').style.display = 'none';
+                console.log('[Auth] Local auto-login as', state.user?.username);
+            } else {
+                console.warn('[Auth] Local login failed:', res.status);
+            }
+        } catch (e) {
+            console.error('[Auth] Local login error:', e);
+        }
+    }
+
+    // Only show Google login when actually using OAuth (skip in local/standalone mode).
+    if (!state.user && CONFIG.authMode !== 'local') {
         initGoogleLogin();
     }
 
