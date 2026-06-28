@@ -411,3 +411,4 @@ See [docker.md](docker.md) for full Compose and Pi/reverse-proxy instructions.
 - [features-v4.md](features-v4.md) — Hover-prefetch, phased timing logs, resolver hardening.
 - [features-v5.md](features-v5.md) — Permanent library import + Groq LLM AI shuffle.
 - [features-v6.md](features-v6.md) — Hum-to-Search: Gemini multimodal melody identification.
+- [features-v7.md](features-v7.md) — Standalone Edition: self-contained desktop/mobile app (no domain or tunnel).
