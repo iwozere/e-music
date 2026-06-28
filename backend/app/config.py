@@ -66,6 +66,12 @@ class Settings(BaseSettings):
     # A larger value gives the browser a bigger initial burst (more buffered audio) at the
     # cost of a slightly higher start-up latency. 0 disables pre-buffering (legacy behaviour).
     STREAM_PREBUFFER_BYTES: int = 256 * 1024
+    # Size (bytes) of each sequential HTTP Range request when pulling the resolved
+    # googlevideo URL. Google throttles a single non-ranged full-file GET to ~playback
+    # rate (causing mid-track stalls on non-cached tracks); fetching in ranged chunks
+    # resets the per-connection throttle window each request and keeps the buffer full.
+    # Set to 0 to disable ranged chunking and fall back to a single streaming GET.
+    STREAM_HTTP_CHUNK_BYTES: int = 1024 * 1024
 
     # --- AI Shuffle (Groq LLM-backed radio mode) ---
     GROQ_API_KEY: Optional[str] = None

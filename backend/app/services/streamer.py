@@ -185,6 +185,25 @@ def _audio_media_type_for_path(file_path: str) -> str:
     return "application/octet-stream"
 
 
+def _parse_total_length(response: "httpx.Response") -> Optional[int]:
+    """Total resource size from a Range response.
+
+    Prefers the ``/<total>`` suffix of ``Content-Range`` (set on 206 replies);
+    falls back to ``Content-Length`` for a 200 (server ignored Range). Returns
+    None when neither is parseable so the feeder loops until a short/empty chunk.
+    """
+    content_range = response.headers.get("Content-Range")
+    if content_range and "/" in content_range:
+        total_part = content_range.rsplit("/", 1)[-1].strip()
+        if total_part.isdigit():
+            return int(total_part)
+    if response.status_code == 200:
+        clen = response.headers.get("Content-Length")
+        if clen and clen.isdigit():
+            return int(clen)
+    return None
+
+
 def _find_executable(name: str) -> str:
     """Find an executable in PATH or the current venv's Scripts/bin directory."""
     found = shutil.which(name)
@@ -380,38 +399,96 @@ def _stream_resolved(
     assert ff_proc.stdin is not None and ff_proc.stdout is not None
 
     def _feed_from_http() -> None:
-        """Worker thread: pump bytes from googlevideo into ffmpeg.stdin."""
+        """Worker thread: pump bytes from googlevideo into ffmpeg.stdin.
+
+        Pulls the resolved URL in sequential HTTP Range chunks rather than one long
+        GET. Google throttles a single non-ranged full-file pull to ~playback rate
+        (the cause of mid-track stalls on non-cached tracks); a fresh ranged request
+        per chunk resets the per-connection throttle window so aggregate throughput
+        stays well above playback rate. Falls back to a single GET when the server
+        ignores Range (status 200) or chunking is disabled via config.
+        """
+        base_headers = dict(resolved.http_headers or {})
+        chunk_bytes = int(settings.STREAM_HTTP_CHUNK_BYTES)
+        # Some resolved googlevideo URLs already pin a byte window via a ``range=``
+        # query param; layering our own Range header on top yields 416s. In that case
+        # (and when chunking is disabled) fall back to a single streaming GET.
+        url_has_range = "range=" in (resolved.url or "").lower()
+        use_chunking = chunk_bytes > 0 and not url_has_range
+        timeout = httpx.Timeout(connect=10.0, read=30.0, write=30.0, pool=30.0)
+        # Shared across chunks so a stall between two range requests is still caught.
+        state = {"t_last": time.monotonic(), "bytes_fed": 0}
+
+        def _pump(response: "httpx.Response") -> bool:
+            """Stream one response body into ffmpeg. Returns False to abort the feeder."""
+            for chunk in response.iter_bytes(64 * 1024):
+                if not chunk:
+                    continue
+                now = time.monotonic()
+                gap_ms = int((now - state["t_last"]) * 1000)
+                if gap_ms >= _STALL_WARN_MS:
+                    _logger.warning(
+                        "streamer: feeder stall track=%s gap_ms=%d bytes_fed=%d",
+                        track_id, gap_ms, state["bytes_fed"],
+                    )
+                state["t_last"] = now
+                state["bytes_fed"] += len(chunk)
+                try:
+                    ff_proc.stdin.write(chunk)
+                except (BrokenPipeError, ValueError):
+                    # ffmpeg exited or client disconnected.
+                    return False
+            return True
+
         try:
-            headers = dict(resolved.http_headers or {})
-            timeout = httpx.Timeout(connect=10.0, read=30.0, write=30.0, pool=30.0)
             with httpx.Client(timeout=timeout, follow_redirects=True) as client:
-                with client.stream("GET", resolved.url, headers=headers) as response:
-                    if response.status_code in (403, 410):
-                        resolver_invalidate(resolved.video_id)
-                        feeder_err.append(f"upstream {response.status_code}")
-                        return
-                    if response.status_code >= 400:
-                        feeder_err.append(f"upstream {response.status_code}")
-                        return
-                    t_last = time.monotonic()
-                    bytes_fed = 0
-                    for chunk in response.iter_bytes(64 * 1024):
-                        if not chunk:
-                            continue
-                        now = time.monotonic()
-                        gap_ms = int((now - t_last) * 1000)
-                        if gap_ms >= _STALL_WARN_MS:
-                            _logger.warning(
-                                "streamer: feeder stall track=%s gap_ms=%d bytes_fed=%d",
-                                track_id, gap_ms, bytes_fed,
-                            )
-                        t_last = now
-                        bytes_fed += len(chunk)
-                        try:
-                            ff_proc.stdin.write(chunk)
-                        except (BrokenPipeError, ValueError):
-                            # ffmpeg exited or client disconnected.
+                if not use_chunking:
+                    # Single streaming GET (chunking disabled or URL self-ranges).
+                    with client.stream("GET", resolved.url, headers=base_headers) as response:
+                        if response.status_code in (403, 410):
+                            resolver_invalidate(resolved.video_id)
+                            feeder_err.append(f"upstream {response.status_code}")
                             return
+                        if response.status_code >= 400:
+                            feeder_err.append(f"upstream {response.status_code}")
+                            return
+                        _pump(response)
+                    return
+
+                pos = 0
+                total: Optional[int] = None
+                while True:
+                    req_headers = dict(base_headers)
+                    req_headers["Range"] = f"bytes={pos}-{pos + chunk_bytes - 1}"
+                    with client.stream("GET", resolved.url, headers=req_headers) as response:
+                        if response.status_code in (403, 410):
+                            resolver_invalidate(resolved.video_id)
+                            feeder_err.append(f"upstream {response.status_code}")
+                            return
+                        # 416 = we asked past EOF. If we already have data this is a
+                        # clean end-of-stream, not an error (don't poison caching).
+                        if response.status_code == 416:
+                            if state["bytes_fed"] == 0:
+                                feeder_err.append("upstream 416 on first range")
+                            break
+                        if response.status_code not in (200, 206):
+                            feeder_err.append(f"upstream {response.status_code}")
+                            return
+                        if total is None:
+                            total = _parse_total_length(response)
+                        before = state["bytes_fed"]
+                        if not _pump(response):
+                            return
+                        got = state["bytes_fed"] - before
+                    # Server ignored Range and sent the whole body — we're done.
+                    if response.status_code == 200:
+                        break
+                    # Short read (< requested window) means we reached EOF.
+                    if got < chunk_bytes:
+                        break
+                    pos += got
+                    if total is not None and pos >= total:
+                        break
         except httpx.HTTPError as exc:
             feeder_err.append(str(exc))
         except Exception as exc:  # pylint: disable=broad-exception-caught
