@@ -2,6 +2,12 @@
 
 A self-hosted, full-stack music ecosystem that bridges your local library with the vast universe of YouTube Music.
 
+> **🏠 Personal project.** This application was developed for my own personal use and is shared as-is. It is meant to be **installed and run by individuals on their own computers or home servers** — it is not a hosted service and is not intended for commercial or public deployment.
+>
+> Repository: **https://github.com/iwozere/e-music**
+
+> **⚠️ Disclaimer.** This app uses **YouTube** as a source of freely available tracks and is provided strictly for **personal, non-commercial use**. You alone are responsible for ensuring your usage complies with [YouTube's Terms of Service](https://www.youtube.com/t/terms) and all applicable laws in your jurisdiction. **The author accepts no legal responsibility or liability** for how this software is used, for any content accessed through it, or for any consequences arising from its use. The software is provided "AS IS", without warranty of any kind.
+
 ![MySpotify Dashboard](static/assets/dashboard_preview.png)
 
 ## 🚀 Overview
