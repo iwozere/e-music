@@ -16,7 +16,7 @@
     <!-- Lucide Icons CDN -->
     <script src="https://unpkg.com/lucide@latest"></script>
     <!-- Custom Style -->
-    <link rel="stylesheet" href="/static/style.css?v=2.9.25">
+    <link rel="stylesheet" href="/static/style.css?v=2.9.26">
 </head>
 
 <body>
@@ -76,7 +76,12 @@
                        style="color: inherit; text-decoration: none; display: inline-flex; align-items: center; gap: 4px;">
                         <i data-lucide="github" style="width: 12px; height: 12px;"></i> <span>GitHub</span>
                     </a>
-                    <span>v2.9.25</span>
+                    <a href="#" onclick="document.getElementById('disclaimer-modal').style.display='flex'; return false;"
+                       title="Disclaimer"
+                       style="color: inherit; text-decoration: none; display: inline-flex; align-items: center; gap: 4px; cursor: pointer;">
+                        <i data-lucide="shield-alert" style="width: 12px; height: 12px;"></i> <span>Disclaimer</span>
+                    </a>
+                    <span>v2.9.26</span>
                 </div>
             </aside>
 
@@ -199,13 +204,43 @@
         </div>
     </div>
 
+    <!-- Disclaimer modal -->
+    <div id="disclaimer-modal" class="modal-overlay">
+        <div class="modal">
+            <div class="modal-header">
+                <h2>Disclaimer</h2>
+                <button class="btn-icon" onclick="document.getElementById('disclaimer-modal').style.display='none'"><i
+                        data-lucide="x"></i></button>
+            </div>
+            <div style="max-width: 460px; font-size: 13px; line-height: 1.65; color: var(--text-muted);">
+                <p><strong style="color: var(--text-main);">Personal project.</strong> MySpotify was developed for
+                    personal use and is shared as-is, for individuals to install and run on their own computers or home
+                    servers. It is not a hosted or commercial service.</p>
+                <p>This app uses <strong style="color: var(--text-main);">YouTube</strong> as a source of freely
+                    available tracks and is provided strictly for <strong style="color: var(--text-main);">personal,
+                    non-commercial use</strong>. You alone are responsible for ensuring your usage complies with
+                    <a href="https://www.youtube.com/t/terms" target="_blank" rel="noopener noreferrer"
+                       style="color: var(--primary);">YouTube's Terms of Service</a> and all applicable laws in your
+                    jurisdiction.</p>
+                <p><strong style="color: var(--text-main);">The author accepts no legal responsibility or
+                    liability</strong> for how this software is used, for any content accessed through it, or for any
+                    consequences arising from its use. The software is provided "AS IS", without warranty of any
+                    kind.</p>
+                <p style="margin-top: 14px;">
+                    <a href="https://github.com/iwozere/e-music" target="_blank" rel="noopener noreferrer"
+                       style="color: var(--primary);">View source on GitHub →</a>
+                </p>
+            </div>
+        </div>
+    </div>
+
     <div id="toast" class="toast-container">Link copied!</div>
     <audio id="main-audio" preload="auto"></audio>
     <!-- App Logic -->
-    <script src="/static/api.js?v=2.9.25"></script>
-    <script src="/static/ui.js?v=2.9.25"></script>
-    <script src="/static/player.js?v=2.9.25"></script>
-    <script src="/static/main.js?v=2.9.25"></script>
+    <script src="/static/api.js?v=2.9.26"></script>
+    <script src="/static/ui.js?v=2.9.26"></script>
+    <script src="/static/player.js?v=2.9.26"></script>
+    <script src="/static/main.js?v=2.9.26"></script>
 </body>
 
 </html>
