@@ -110,12 +110,17 @@ window.PLAYER = PLAYER;
 
 /**
  * Feature 2 (prefetch): warm the server-side cache for whatever the user is most
- * likely to hit next. Scheduled ~3s after a track starts so it doesn't fight the
- * live playback's warm-up; superseded on every new playTrack() call.
+ * likely to hit next. Scheduled shortly after a track starts so it doesn't fight
+ * the live playback's warm-up; superseded on every new playTrack() call.
+ *
+ * _leadDelayMs controls the prefetch lead time: a smaller value starts warming the
+ * next track sooner (more time to fully cache it before it's needed). 1.5s lets the
+ * current track establish its own buffer first, then begins warming the next one.
  */
 const PREFETCH = {
     _timer: null,
     _inFlight: null,
+    _leadDelayMs: 1500,
 
     _predictNextId() {
         if (state?.queue?.length > 0) {
@@ -162,7 +167,7 @@ const PREFETCH = {
                     }).catch(() => { /* ignore */ });
                 }
             }).catch(() => { /* ignore network errors, best-effort */ });
-        }, 3000);
+        }, this._leadDelayMs);
     },
 };
 

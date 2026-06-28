@@ -87,7 +87,9 @@ class Settings(BaseSettings):
     # --- Prefetch / warm-cache (Feature 2: zero-latency next-track playback) ---
     PREFETCH_ENABLED: bool = True
     # Upper bound on concurrent prefetch jobs server-wide; guards the Pi's CPU/network.
-    PREFETCH_MAX_CONCURRENT: int = 2
+    # Pi 5 (16 GB, lightly loaded) comfortably handles 3 concurrent warm-ups, so a live
+    # play that is mid-resolve never causes the next-track prefetch to be declined.
+    PREFETCH_MAX_CONCURRENT: int = 3
 
     @field_validator("JWT_SECRET")
     @classmethod
