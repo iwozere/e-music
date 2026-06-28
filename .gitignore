@@ -31,10 +31,15 @@ mobile/ios/Runner/GoogleService-Info.plist
 Thumbs.db
 
 # Project Specific
-backend/app/db/*.db
+backend/app/db/
 backend/app/cache/*
 !backend/app/cache/.gitkeep
 /share/e-music/
+
+# Standalone Edition build artifacts (PyInstaller / installers) — docs/features-v7.md
+dist/
+*.spec.bak
+backend/vendor/ffmpeg/
 
 # Secrets — yt-dlp session cookies (never commit)
 cookies.txt
