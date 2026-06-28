@@ -14,6 +14,21 @@ const UI = {
         setTimeout(() => toast.classList.remove('show'), 3000);
     },
 
+    /**
+     * Highlight the track card matching state.currentTrack as "now playing".
+     * Toggles the accent border/title (.now-playing) and freezes the equalizer
+     * animation while paused (.paused). Safe to call on every render and on
+     * every play/pause; matches by the data-track-id set in renderTracks.
+     */
+    markNowPlaying: () => {
+        const activeId = state.currentTrack ? state.currentTrack.id : null;
+        document.querySelectorAll('.track-card').forEach((card) => {
+            const isActive = !!activeId && card.dataset.trackId === activeId;
+            card.classList.toggle('now-playing', isActive);
+            card.classList.toggle('paused', isActive && !state.isPlaying);
+        });
+    },
+
     renderTracks: (tracks, title = null, append = false) => {
         if (!tracks || !Array.isArray(tracks)) {
             console.error("[UI] Invalid tracks data provided to renderTracks:", tracks);
@@ -96,7 +111,7 @@ const UI = {
             const cacheBadge = track.is_cached ? `<span class="badge-cached" title="Cached on SSD"><i data-lucide="check-circle" style="width: 10px; height: 10px;"></i> Cached</span>` : "";
 
             return `
-                <div class="track-card animate-fade">
+                <div class="track-card animate-fade" data-track-id="${id}">
                     <div class="card-image-container" onclick="playTrack('${id}', '${safeTitle}', '${safeArtist}', '${thumb}')">
                         <img src="${thumb}" class="track-image" onerror="this.src='https://images.unsplash.com/photo-1493225255756-d9584f8606e9?w=300&q=80'">
                         <div class="source-indicator" title="Source: ${track.source_type}">
@@ -106,6 +121,7 @@ const UI = {
                         <div class="card-play-overlay">
                             <i data-lucide="play-circle"></i>
                         </div>
+                        <div class="now-playing-eq" aria-hidden="true"><span></span><span></span><span></span><span></span></div>
                     </div>
                     <div class="card-actions">
                         <button class="card-action-btn" title="Share" onclick="event.stopPropagation(); shareItem('${id}', 'track', '${safeTitle}', '${safeArtist}')">
@@ -149,6 +165,7 @@ const UI = {
             if (scrollContainer) scrollContainer.scrollTop = 0;
         }
         UI.initIcons();
+        UI.markNowPlaying();
     },
 
     setLoading: (isLoading) => {

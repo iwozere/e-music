@@ -35,6 +35,17 @@ const PLAYER = {
             playNext();
         });
 
+        // Keep the on-screen "now playing" highlight in sync with real playback
+        // state, regardless of how play/pause was triggered (button, media keys…).
+        audio.addEventListener('play', () => {
+            state.isPlaying = true;
+            if (typeof UI !== 'undefined' && UI.markNowPlaying) UI.markNowPlaying();
+        });
+        audio.addEventListener('pause', () => {
+            state.isPlaying = false;
+            if (typeof UI !== 'undefined' && UI.markNowPlaying) UI.markNowPlaying();
+        });
+
         // Volume Control Init
         audio.volume = 0.8;
 
@@ -209,6 +220,7 @@ function coerceStreamUrlToPageHttps(url) {
 window.playTrack = async (trackId, title, artist, thumbnail) => {
     state.currentTrack = { id: trackId, title, artist, thumbnail };
     state.isPlaying = true;
+    if (typeof UI !== 'undefined' && UI.markNowPlaying) UI.markNowPlaying();
 
     const playerMetadata = document.getElementById('player-metadata');
     if (playerMetadata) playerMetadata.style.visibility = 'visible';

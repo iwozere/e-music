@@ -292,6 +292,60 @@ body {
     transform: scale(1);
 }
 
+/* --- Now Playing indicator ------------------------------------------------ */
+.track-card.now-playing {
+    border-color: var(--primary);
+    background: rgba(139, 92, 246, 0.12);
+    box-shadow: 0 0 0 1px var(--primary), 0 10px 30px rgba(139, 92, 246, 0.25);
+}
+
+.track-card.now-playing .track-info .title {
+    color: var(--primary);
+}
+
+/* Animated equalizer bars badge on the album art (universal "now playing" cue) */
+.now-playing-eq {
+    position: absolute;
+    bottom: 8px;
+    left: 8px;
+    display: none;
+    align-items: flex-end;
+    gap: 3px;
+    height: 16px;
+    padding: 4px 6px;
+    border-radius: 8px;
+    background: rgba(0, 0, 0, 0.55);
+    backdrop-filter: blur(4px);
+    z-index: 3;
+}
+
+.track-card.now-playing .now-playing-eq {
+    display: flex;
+}
+
+.now-playing-eq span {
+    width: 3px;
+    height: 100%;
+    background: var(--primary);
+    border-radius: 2px;
+    transform-origin: bottom;
+    animation: eq-bounce 1s ease-in-out infinite;
+}
+
+.now-playing-eq span:nth-child(2) { animation-delay: -0.8s; }
+.now-playing-eq span:nth-child(3) { animation-delay: -0.4s; }
+.now-playing-eq span:nth-child(4) { animation-delay: -0.6s; }
+
+/* Freeze the bars while paused so the cue reflects real playback state */
+.track-card.now-playing.paused .now-playing-eq span {
+    animation-play-state: paused;
+}
+
+@keyframes eq-bounce {
+    0%, 100% { transform: scaleY(0.3); }
+    50% { transform: scaleY(1); }
+}
+
 .source-indicator {
     position: absolute;
     top: 12px;
