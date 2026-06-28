@@ -273,7 +273,10 @@ All settings live in `backend/app/config.py` and are populated from the `.env` f
 
 | Variable | Default | Description |
 | :------- | :------ | :---------- |
-| `DOMAIN` | — | Public hostname; used for OAuth redirect URIs and API base URL. |
+| `APP_PROFILE` | `server` | Run profile: `server` (Docker/Pi) or `standalone` (self-contained desktop app — loopback bind, OS user-data dirs, local auth). See [features-v7.md](features-v7.md). |
+| `DATA_DIR` | OS user-data dir | Standalone only: root for DB, library, logs, and the persisted local JWT secret. Blank → `platformdirs` default. |
+| `FFMPEG_PATH` | — | Absolute path to ffmpeg; blank resolves from PATH/venv. Standalone bundle points this at its vendored static build. |
+| `DOMAIN` | — | Public hostname; used for OAuth redirect URIs and API base URL. Optional in standalone. |
 | `JWT_SECRET` | — | Signs access and refresh tokens. |
 | `ALGORITHM` | `HS256` | JWT algorithm. |
 | `ACCESS_TOKEN_EXPIRE_MINUTES` | 60 | Access token lifetime. |

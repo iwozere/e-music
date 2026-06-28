@@ -104,7 +104,7 @@ def _build_yt_dlp_argv(track_video_id: str) -> list[str]:
 
 
 def _common_ffmpeg_prefix() -> list[str]:
-    ff = _find_executable("ffmpeg")
+    ff = _ffmpeg_executable()
     argv: list[str] = [ff, "-hide_banner", "-loglevel", "error"]
     if settings.STREAM_LOW_LATENCY:
         argv += ["-fflags", "nobuffer", "-flags", "low_delay"]
@@ -216,6 +216,14 @@ def _find_executable(name: str) -> str:
     if os.path.exists(venv_bin):
         return venv_bin
     return name  # let the OS raise FileNotFoundError if missing
+
+
+def _ffmpeg_executable() -> str:
+    """Resolve the ffmpeg binary, honoring ``settings.FFMPEG_PATH`` (bundled build in standalone)."""
+    override = (settings.FFMPEG_PATH or "").strip()
+    if override:
+        return override
+    return _find_executable("ffmpeg")
 
 
 def validate_cache_file(path: str, min_size: int = 100 * 1024) -> bool:
@@ -729,7 +737,7 @@ async def stream_youtube(
         raise HTTPException(status_code=503, detail=cached_fail)
 
     # 4. Pre-flight binary check (ffmpeg is always required; yt-dlp only for the legacy path).
-    ffmpeg_exe = _find_executable("ffmpeg")
+    ffmpeg_exe = _ffmpeg_executable()
     if not shutil.which(ffmpeg_exe):
         _logger.error("streamer: ffmpeg not found at %s", ffmpeg_exe)
         raise HTTPException(status_code=503, detail="ffmpeg missing — install it and add to PATH")
@@ -930,7 +938,7 @@ async def prefetch_youtube(
         return PrefetchStatus.SKIPPED
 
     # 4. Pre-flight: ffmpeg required for both pipelines.
-    ffmpeg_exe = _find_executable("ffmpeg")
+    ffmpeg_exe = _ffmpeg_executable()
     if not shutil.which(ffmpeg_exe):
         sema.release()
         _logger.warning("streamer: prefetch skipped (ffmpeg missing) track=%s", track_id)

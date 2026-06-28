@@ -14,7 +14,9 @@
       "Bash(git add *)",
       "Bash(git commit *)",
       "Bash(git push *)",
-      "PowerShell(git *)"
+      "PowerShell(git *)",
+      "Bash(PYTHONPATH=. ../.venv/Scripts/python.exe \"C:/Users/akoss/AppData/Local/Temp/claude/C--dev-cursor-e-music/1a0e10ff-75d3-4ab8-afa3-97b4c0fd9a4a/scratchpad/throttle_test.py\")",
+      "Bash(grep -vE \"WARNING|^\\\\s*$\")"
     ]
   }
 }

@@ -6,6 +6,7 @@ sqlalchemy==2.0.36
 aiosqlite==0.20.0
 sqlmodel==0.0.22
 pydantic-settings==2.7.0
+platformdirs>=4.2,<5
 PyJWT>=2.10.0
 passlib[bcrypt]==1.7.4
 python-multipart==0.0.20
