@@ -1,0 +1,7 @@
+# Desktop-only dependencies for the Standalone Edition (docs/features-v7.md, Phase 6).
+#
+# Do NOT merge these into requirements.txt: the Docker/server image must not pull
+# pywebview/pythonnet (pythonnet needs mono/.NET on Linux and is irrelevant to the server).
+# Installed by run-standalone.bat and build-standalone.ps1 on top of requirements.txt.
+
+pywebview>=5.0        # native desktop window; pulls pythonnet on Windows (WebView2 backend)

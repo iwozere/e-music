@@ -67,6 +67,13 @@ if not exist ".venv\Scripts\python.exe" (
         pause
         exit /b 1
     )
+    ".venv\Scripts\python.exe" -m pip install -r "backend\requirements-standalone.txt"
+    if errorlevel 1 (
+        echo  [ERROR] Desktop dependency installation failed. Check your internet connection and retry.
+        echo(
+        pause
+        exit /b 1
+    )
     echo  [setup] Setup complete.
     echo(
 )

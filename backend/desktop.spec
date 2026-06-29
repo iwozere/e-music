@@ -29,11 +29,16 @@ for _pkg in (
     "email_validator",
     "passlib",   # handlers (e.g. passlib.handlers.bcrypt) are imported via a runtime registry
     "bcrypt",
+    "webview",   # pywebview: native window; ships the WebView2 loader DLLs as package data
+    "clr_loader",
 ):
     _d, _b, _h = collect_all(_pkg)
     datas += _d
     binaries += _b
     hiddenimports += _h
+
+# pythonnet's import name is 'clr'; ensure it survives freezing for the WebView2 backend.
+hiddenimports += ["clr"]
 
 # Our own package: routers/services are sometimes imported inside functions.
 hiddenimports += collect_submodules("app")

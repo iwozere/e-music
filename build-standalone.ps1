@@ -29,11 +29,16 @@ if (-not (Test-Path $py)) {
     throw "Virtual environment not found at $py. Create it and install backend/requirements.txt first."
 }
 
-# 1. Ensure PyInstaller is available.
+# 1. Ensure PyInstaller and the desktop-only deps (pywebview) are available.
 & $py -c "import PyInstaller" 2>$null
 if ($LASTEXITCODE -ne 0) {
     Write-Host "[build] Installing PyInstaller..." -ForegroundColor Yellow
     & $py -m pip install pyinstaller
+}
+& $py -c "import webview" 2>$null
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "[build] Installing desktop dependencies (pywebview)..." -ForegroundColor Yellow
+    & $py -m pip install -r (Join-Path $backend "requirements-standalone.txt")
 }
 
 # 2. Vendor ffmpeg so playback works without a system install.

@@ -1,15 +1,19 @@
-"""Standalone Edition launcher (docs/features-v7.md, Phase 3).
+"""Standalone Edition launcher (docs/features-v7.md, Phases 3 & 6).
 
 Starts the MySpotify backend in the ``standalone`` profile on the loopback interface and
-opens the default browser. No domain, tunnel, reverse proxy, or login is required — the web
-UI auto-logs into the local single-user account.
+shows the web UI in a native desktop window (pywebview), falling back to the default browser
+when no window backend is available. No domain, tunnel, reverse proxy, or login is required —
+the web UI auto-logs into the local single-user account.
 
 Run it with::
 
     python -m app.desktop
 
-This is the entrypoint that later gets frozen into the desktop binary (PyInstaller). For now
-it depends only on the project's existing requirements (uvicorn) plus the Python standard library.
+Frontend selection (env overrides):
+  MYSPOTIFY_NO_BROWSER=1   headless: run the server only, no window/browser (for automation)
+  MYSPOTIFY_USE_BROWSER=1  force the default browser instead of the native window
+
+This is the entrypoint that gets frozen into the desktop binary (PyInstaller).
 """
 
 import json
@@ -97,9 +101,41 @@ def _write_runtime_file(data_dir: str, port: int) -> None:
         pass
 
 
-def _should_open_browser() -> bool:
-    """Allow headless/automated runs to skip launching a browser (``MYSPOTIFY_NO_BROWSER=1``)."""
-    return os.environ.get("MYSPOTIFY_NO_BROWSER", "").strip().lower() not in ("1", "true", "yes")
+def _env_flag(name: str) -> bool:
+    return os.environ.get(name, "").strip().lower() in ("1", "true", "yes")
+
+
+def _frontend_mode() -> str:
+    """Choose how to present the UI: 'none' (headless), 'browser', or 'window' (default)."""
+    if _env_flag("MYSPOTIFY_NO_BROWSER"):
+        return "none"
+    if _env_flag("MYSPOTIFY_USE_BROWSER"):
+        return "browser"
+    return "window"
+
+
+def _run_window(url: str) -> bool:
+    """Open the UI in a native pywebview window. Blocks until it's closed.
+
+    Returns True if a window ran, False if no window backend is available (caller falls back).
+    """
+    try:
+        import webview
+    except Exception:
+        return False
+    try:
+        webview.create_window(
+            "MySpotify",
+            url,
+            width=1280,
+            height=820,
+            min_size=(940, 600),
+        )
+        webview.start()  # blocks on the main thread until the window is closed
+        return True
+    except Exception as exc:  # no GUI/WebView2 runtime, etc. — fall back to the browser
+        print(f"[desktop] Native window unavailable ({exc}); using the browser instead.")
+        return False
 
 
 def main() -> int:
@@ -141,9 +177,22 @@ def main() -> int:
     if _wait_for_health(port):
         print(f"[desktop] Backend ready at {url}")
     else:
-        print(f"[desktop] Backend not healthy yet - opening {url} anyway.")
+        print(f"[desktop] Backend not healthy yet - presenting {url} anyway.")
 
-    if _should_open_browser():
+    def _shutdown() -> None:
+        print("\n[desktop] Shutting down...")
+        server.should_exit = True
+        thread.join(timeout=10)
+
+    mode = _frontend_mode()
+    if mode == "window":
+        # Blocks until the window is closed; returns False if no window backend exists.
+        if _run_window(url):
+            _shutdown()
+            return 0
+        mode = "browser"  # fall through to browser + wait loop
+
+    if mode == "browser":
         webbrowser.open(url)
 
     print("[desktop] Running. Press Ctrl+C to quit.")
@@ -151,9 +200,7 @@ def main() -> int:
         while thread.is_alive():
             time.sleep(0.5)
     except KeyboardInterrupt:
-        print("\n[desktop] Shutting down...")
-        server.should_exit = True
-        thread.join(timeout=10)
+        _shutdown()
     return 0
 
 
