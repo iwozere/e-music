@@ -12,8 +12,10 @@
 #>
 [CmdletBinding()]
 param(
-    # Path to an ffmpeg.exe to bundle. Defaults to the one on PATH.
-    [string]$FfmpegPath
+    # Path to a specific ffmpeg.exe to bundle. If omitted, the essentials build is downloaded.
+    [string]$FfmpegPath,
+    # Where to fetch a small ffmpeg from when none is vendored/provided.
+    [string]$FfmpegEssentialsUrl = "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip"
 )
 
 $ErrorActionPreference = "Stop"
@@ -35,26 +37,35 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 # 2. Vendor ffmpeg so playback works without a system install.
+#    Priority: explicit -FfmpegPath > already-vendored > download the small essentials build.
 $vendorDir = Join-Path $backend "vendor\ffmpeg\win"
 $vendorFfmpeg = Join-Path $vendorDir "ffmpeg.exe"
-if (-not (Test-Path $vendorFfmpeg)) {
-    if (-not $FfmpegPath) {
-        $cmd = Get-Command ffmpeg -ErrorAction SilentlyContinue
-        if ($cmd) { $FfmpegPath = $cmd.Source }
-    }
-    if ($FfmpegPath -and (Test-Path $FfmpegPath)) {
-        New-Item -ItemType Directory -Force -Path $vendorDir | Out-Null
-        Copy-Item $FfmpegPath $vendorFfmpeg
-        $mb = [math]::Round((Get-Item $vendorFfmpeg).Length / 1MB)
-        Write-Host "[build] Vendored ffmpeg ($mb MB) from $FfmpegPath" -ForegroundColor Green
-        if ($mb -gt 120) {
-            Write-Host "[build] NOTE: that's a 'full' ffmpeg. For a smaller download, drop a" -ForegroundColor DarkYellow
-            Write-Host "        'release-essentials' ffmpeg.exe into $vendorDir and rebuild." -ForegroundColor DarkYellow
-        }
-    } else {
-        Write-Host "[build] WARNING: no ffmpeg found to bundle. The app will build but" -ForegroundColor Yellow
-        Write-Host "        playback will fail. Install one (winget install Gyan.FFmpeg)" -ForegroundColor Yellow
-        Write-Host "        or pass -FfmpegPath <path-to-ffmpeg.exe>, then rebuild." -ForegroundColor Yellow
+if (Test-Path $vendorFfmpeg) {
+    $mb = [math]::Round((Get-Item $vendorFfmpeg).Length / 1MB, 1)
+    Write-Host "[build] Using vendored ffmpeg ($mb MB) at $vendorFfmpeg" -ForegroundColor Green
+}
+elseif ($FfmpegPath -and (Test-Path $FfmpegPath)) {
+    New-Item -ItemType Directory -Force -Path $vendorDir | Out-Null
+    Copy-Item $FfmpegPath $vendorFfmpeg
+    $mb = [math]::Round((Get-Item $vendorFfmpeg).Length / 1MB, 1)
+    Write-Host "[build] Vendored ffmpeg ($mb MB) from $FfmpegPath" -ForegroundColor Green
+}
+else {
+    Write-Host "[build] Downloading ffmpeg (release-essentials)..." -ForegroundColor Cyan
+    New-Item -ItemType Directory -Force -Path $vendorDir | Out-Null
+    $zip = Join-Path $env:TEMP "ffmpeg-essentials.zip"
+    $tmp = Join-Path $env:TEMP "ffmpeg-ess-extract"
+    try {
+        Invoke-WebRequest -Uri $FfmpegEssentialsUrl -OutFile $zip -UseBasicParsing
+        Expand-Archive -Path $zip -DestinationPath $tmp -Force
+        $src = Get-ChildItem -Path $tmp -Recurse -Filter ffmpeg.exe | Select-Object -First 1
+        Copy-Item $src.FullName $vendorFfmpeg -Force
+        $mb = [math]::Round((Get-Item $vendorFfmpeg).Length / 1MB, 1)
+        Write-Host "[build] Vendored essentials ffmpeg ($mb MB)" -ForegroundColor Green
+    } catch {
+        Write-Host "[build] WARNING: ffmpeg download failed ($_). The app will build but" -ForegroundColor Yellow
+        Write-Host "        playback will fail. Pass -FfmpegPath <ffmpeg.exe> or drop one at" -ForegroundColor Yellow
+        Write-Host "        $vendorFfmpeg, then rebuild." -ForegroundColor Yellow
     }
 }
 
