@@ -43,6 +43,19 @@
 	</array>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Microphone access is needed to identify songs by humming.</string>
+	<!-- Home Remote (Phase 7): discover and connect to a MySpotify desktop on the local network. -->
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>MySpotify uses the local network to find and connect to your MySpotify desktop app on the same Wi-Fi.</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_myspotify._tcp</string>
+	</array>
+	<!-- Allow plain http:// to private LAN addresses (the desktop serves http on loopback/LAN). -->
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>

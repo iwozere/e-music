@@ -12,6 +12,9 @@ Run it with::
 Frontend selection (env overrides):
   MYSPOTIFY_NO_BROWSER=1   headless: run the server only, no window/browser (for automation)
   MYSPOTIFY_USE_BROWSER=1  force the default browser instead of the native window
+  MYSPOTIFY_REMOTE=1       "Home Remote": bind 0.0.0.0, enable PIN pairing (POST /auth/pair),
+                           and advertise on the LAN via mDNS so a phone can discover + connect
+  MYSPOTIFY_PAIRING_PIN    optional fixed pairing PIN (otherwise a 6-digit one is generated)
 
 This is the entrypoint that gets frozen into the desktop binary (PyInstaller).
 """
@@ -105,6 +108,67 @@ def _env_flag(name: str) -> bool:
     return os.environ.get(name, "").strip().lower() in ("1", "true", "yes")
 
 
+def _lan_ip() -> str:
+    """Best-effort primary LAN IPv4 address (for the phone to connect to). Falls back to 127.0.0.1."""
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.connect(("8.8.8.8", 80))  # no packets sent; just selects the outbound interface
+            return s.getsockname()[0]
+    except OSError:
+        return "127.0.0.1"
+
+
+def _load_or_create_pin(data_dir: str) -> str:
+    """Return the LAN pairing PIN: env override, else a persisted 6-digit code (generated once)."""
+    import secrets
+
+    override = os.environ.get("MYSPOTIFY_PAIRING_PIN", "").strip()
+    if override:
+        return override
+    pin_file = os.path.join(data_dir, "pair_pin") if data_dir else ""
+    try:
+        if pin_file and os.path.isfile(pin_file):
+            existing = open(pin_file, encoding="utf-8").read().strip()
+            if existing:
+                return existing
+        pin = f"{secrets.randbelow(1_000_000):06d}"
+        if pin_file:
+            with open(pin_file, "w", encoding="utf-8") as fh:
+                fh.write(pin)
+        return pin
+    except OSError:
+        return f"{secrets.randbelow(1_000_000):06d}"
+
+
+def _advertise_mdns(port: int):
+    """Advertise the service as ``_myspotify._tcp`` on the LAN so phones can discover it.
+
+    Returns a (Zeroconf, ServiceInfo) pair to unregister later, or None if zeroconf is unavailable.
+    """
+    try:
+        import socket as _socket
+
+        from zeroconf import ServiceInfo, Zeroconf
+    except Exception:
+        return None
+    try:
+        ip = _lan_ip()
+        info = ServiceInfo(
+            "_myspotify._tcp.local.",
+            f"MySpotify on {_socket.gethostname()}._myspotify._tcp.local.",
+            addresses=[_socket.inet_aton(ip)],
+            port=port,
+            properties={"path": "/", "api": "/api/v1"},
+            server=f"{_socket.gethostname()}.local.",
+        )
+        zc = Zeroconf()
+        zc.register_service(info)
+        return (zc, info)
+    except Exception as exc:
+        print(f"[desktop] mDNS advertisement unavailable ({exc}).")
+        return None
+
+
 def _frontend_mode() -> str:
     """Choose how to present the UI: 'none' (headless), 'browser', or 'window' (default)."""
     if _env_flag("MYSPOTIFY_NO_BROWSER"):
@@ -155,6 +219,14 @@ def main() -> int:
     except Exception:
         pass
 
+    # "Home Remote" (docs/features-v7.md §6): opt-in LAN access guarded by a pairing PIN.
+    remote = _env_flag("MYSPOTIFY_REMOTE")
+    bind_host = "0.0.0.0" if remote else "127.0.0.1"
+    pin = ""
+    if remote:
+        pin = _load_or_create_pin(settings.DATA_DIR)
+        settings.LOCAL_PAIRING_PIN = pin  # enables POST /auth/pair
+
     from app.main import app
 
     url = f"http://127.0.0.1:{port}"
@@ -167,9 +239,14 @@ def main() -> int:
     print(f"  Library : {settings.MUSIC_PATH}")
     print(f"  FFmpeg  : {settings.ffmpeg_executable()}{'  (bundled)' if _bundled_ffmpeg() else ''}")
     print(f"  URL     : {url}")
+    if remote:
+        print("-" * 60)
+        print("  Home Remote ENABLED - connect your phone on the same Wi-Fi:")
+        print(f"    Address : http://{_lan_ip()}:{port}")
+        print(f"    PIN     : {pin}")
     print("=" * 60)
 
-    config = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="info")
+    config = uvicorn.Config(app, host=bind_host, port=port, log_level="info")
     server = uvicorn.Server(config)
     thread = threading.Thread(target=server.run, name="uvicorn", daemon=True)
     thread.start()
@@ -179,8 +256,19 @@ def main() -> int:
     else:
         print(f"[desktop] Backend not healthy yet - presenting {url} anyway.")
 
+    mdns = _advertise_mdns(port) if remote else None
+    if remote and mdns:
+        print("[desktop] Discoverable on the LAN as '_myspotify._tcp'.")
+
     def _shutdown() -> None:
         print("\n[desktop] Shutting down...")
+        if mdns:
+            try:
+                zc, info = mdns
+                zc.unregister_service(info)
+                zc.close()
+            except Exception:
+                pass
         server.should_exit = True
         thread.join(timeout=10)
 

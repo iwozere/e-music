@@ -96,6 +96,7 @@ MySpotify is a self-hosted music stack with a centralized backend and multiple c
 | `/api/v1/auth/register` | POST | — | Register (username, email, password). 5/min. |
 | `/api/v1/auth/token` | POST | — | OAuth2 login; returns access + refresh tokens. 15/min. |
 | `/api/v1/auth/local` | POST | — | **Standalone only:** auto-login the local single-user account; returns access + refresh tokens. Loopback-only; 404 in the server profile. See [features-v7.md](features-v7.md). |
+| `/api/v1/auth/pair` | POST | — | **Standalone "Home Remote":** exchange the desktop's pairing PIN (`{"pin": "..."}`) for tokens to the local user. Enabled only when a PIN is set; 404 otherwise. 10/min. See [features-v7.md](features-v7.md) §6. |
 | `/api/v1/auth/refresh` | POST | — | Rotate refresh token. 30/min. |
 | `/api/v1/auth/logout` | POST | — | Revoke refresh token (no-op safe). |
 | `/api/v1/auth/me` | GET | JWT | Current user profile. |
@@ -277,6 +278,7 @@ All settings live in `backend/app/config.py` and are populated from the `.env` f
 | `APP_PROFILE` | `server` | Run profile: `server` (Docker/Pi) or `standalone` (self-contained desktop app — loopback bind, OS user-data dirs, local auth). See [features-v7.md](features-v7.md). |
 | `DATA_DIR` | OS user-data dir | Standalone only: root for DB, library, logs, and the persisted local JWT secret. Blank → `platformdirs` default. |
 | `FFMPEG_PATH` | — | Absolute path to ffmpeg; blank resolves from PATH/venv. Standalone bundle points this at its vendored static build. |
+| `LOCAL_PAIRING_PIN` | — | Standalone "Home Remote" pairing PIN. When set (by the desktop launcher's remote mode), enables `POST /auth/pair` for LAN devices; empty disables it. |
 | `DOMAIN` | — | Public hostname; used for OAuth redirect URIs and API base URL. Optional in standalone. |
 | `JWT_SECRET` | — | Signs access and refresh tokens. |
 | `ALGORITHM` | `HS256` | JWT algorithm. |

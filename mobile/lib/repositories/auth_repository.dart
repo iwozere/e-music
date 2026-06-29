@@ -100,6 +100,37 @@ class AuthRepository {
     }
   }
 
+  /// "Home Remote" pairing: point the app at a desktop on the LAN and exchange its PIN
+  /// for tokens (docs/features-v7.md §6). [baseUrl] must include the /api/v1 suffix.
+  Future<User?> pairWithHomeServer({
+    required String baseUrl,
+    required String pin,
+  }) async {
+    try {
+      await apiClient.setBaseUrl(baseUrl);
+      final response = await apiClient.post(
+        '/auth/pair',
+        body: {'pin': pin},
+        authenticated: false,
+      );
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        final token = data['access_token'] as String?;
+        final refresh = data['refresh_token'] as String?;
+        if (token != null && refresh != null) {
+          await apiClient.saveTokenPair(token, refresh);
+        }
+        final userData = data['user'];
+        return userData != null
+            ? User.fromJson(userData as Map<String, dynamic>)
+            : await getCurrentUser();
+      }
+      return null;
+    } catch (e) {
+      return null;
+    }
+  }
+
   Future<void> signOut() async {
     final refresh = await apiClient.getRefreshToken();
     await _googleSignIn.signOut();

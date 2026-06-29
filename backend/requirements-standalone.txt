@@ -5,3 +5,4 @@
 # Installed by run-standalone.bat and build-standalone.ps1 on top of requirements.txt.
 
 pywebview>=5.0        # native desktop window; pulls pythonnet on Windows (WebView2 backend)
+zeroconf>=0.130       # mDNS advertisement for "Home Remote" LAN discovery (Phase 7)

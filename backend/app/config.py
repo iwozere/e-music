@@ -76,6 +76,10 @@ class Settings(BaseSettings):
     # HMAC for signed stream URLs; defaults to JWT_SECRET if empty.
     STREAM_URL_SIGNING_SECRET: str = ""
     STREAM_URL_TTL_SECONDS: int = 600
+    # Standalone "Home Remote" (docs/features-v7.md §6): when non-empty (standalone only),
+    # POST /auth/pair lets a LAN device exchange this PIN for tokens. Set by the desktop
+    # launcher when remote access is opted into; empty disables pairing.
+    LOCAL_PAIRING_PIN: str = ""
 
     # Optional / Extra fields from .env. Paths default per-profile in _apply_profile when blank.
     MUSIC_PATH: str = ""
@@ -243,6 +247,10 @@ class Settings(BaseSettings):
     def ffmpeg_executable(self) -> str:
         """Resolve the ffmpeg binary; honors ``FFMPEG_PATH`` (bundled build in standalone)."""
         return (self.FFMPEG_PATH or "").strip() or "ffmpeg"
+
+    def pairing_enabled(self) -> bool:
+        """True when LAN pairing via POST /auth/pair is active (standalone + a PIN is set)."""
+        return self.is_standalone() and bool(self.LOCAL_PAIRING_PIN)
 
     def auth_mode(self) -> str:
         """Client-facing auth mode: 'oauth' (Google configured), 'local' (standalone), or 'password'."""

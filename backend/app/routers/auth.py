@@ -1,3 +1,4 @@
+import hmac
 import uuid
 from typing import Any
 from urllib.parse import quote
@@ -25,6 +26,7 @@ from app.models import User
 from app.schemas import (
     GoogleAuthBody,
     LogoutBody,
+    PairBody,
     RefreshBody,
     RegisterBody,
     TokenPairResponse,
@@ -165,6 +167,43 @@ async def local_login(
         raise HTTPException(status_code=404, detail="Not found")
     if not _is_local_request(request):
         raise HTTPException(status_code=403, detail="Local login is only available on loopback")
+
+    user = get_or_create_local_user(session)
+    access_token, refresh_token, expires_in = issue_access_and_refresh(session, user)
+    session.commit()
+    return {
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+        "token_type": "bearer",
+        "expires_in": expires_in,
+        "user": {
+            "id": user.id,
+            "username": user.username,
+            "email": user.email,
+            "role": user.role,
+        },
+    }
+
+
+@router.post("/pair")
+@limiter.limit("10/minute")
+async def pair_login(
+    request: Request,
+    body: PairBody,
+    session: Session = Depends(get_session),
+) -> dict:
+    """
+    LAN "Home Remote" pairing (docs/features-v7.md §6).
+
+    A device on the same network exchanges the desktop's pairing PIN for tokens to the local
+    user. Enabled only in the standalone profile when a PIN is configured (i.e. the user opted
+    into remote access); otherwise returns 404. Rate-limited to slow PIN guessing.
+    """
+    if not settings.pairing_enabled():
+        raise HTTPException(status_code=404, detail="Not found")
+    if not hmac.compare_digest(body.pin, settings.LOCAL_PAIRING_PIN):
+        _logger.warning("Rejected pairing attempt from %s", request.client.host if request.client else "?")
+        raise HTTPException(status_code=401, detail="Invalid pairing code")
 
     user = get_or_create_local_user(session)
     access_token, refresh_token, expires_in = issue_access_and_refresh(session, user)

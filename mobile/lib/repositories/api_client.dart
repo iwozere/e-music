@@ -5,13 +5,26 @@ import 'package:http_parser/http_parser.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 class ApiClient {
-  final String baseUrl;
+  /// Mutable so "Home Remote" pairing can repoint the app at a discovered desktop on the LAN.
+  String baseUrl;
   final _storage = const FlutterSecureStorage();
 
   static const _kAccess = 'jwt_token';
   static const _kRefresh = 'jwt_refresh_token';
+  static const _kBaseUrl = 'api_base_url';
 
   ApiClient({required this.baseUrl});
+
+  /// The persisted base URL chosen via Home Remote pairing, if any (read at startup).
+  static Future<String?> loadPersistedBaseUrl() async {
+    return await const FlutterSecureStorage().read(key: _kBaseUrl);
+  }
+
+  /// Repoint the client and remember the choice across launches.
+  Future<void> setBaseUrl(String url) async {
+    baseUrl = url;
+    await _storage.write(key: _kBaseUrl, value: url);
+  }
 
   Future<String?> getToken() async {
     return await _storage.read(key: _kAccess);

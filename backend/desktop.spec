@@ -31,6 +31,7 @@ for _pkg in (
     "bcrypt",
     "webview",   # pywebview: native window; ships the WebView2 loader DLLs as package data
     "clr_loader",
+    "zeroconf",  # mDNS advertisement for Home Remote (loads platform backends dynamically)
 ):
     _d, _b, _h = collect_all(_pkg)
     datas += _d

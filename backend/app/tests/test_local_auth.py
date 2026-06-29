@@ -11,6 +11,7 @@ from sqlmodel import Session, SQLModel, create_engine
 from app.auth_utils import verify_token
 from app.config import settings
 from app.routers import auth as auth_router
+from app.schemas import PairBody
 
 
 @pytest.fixture
@@ -24,6 +25,11 @@ def session():
 def _request(host: str = "127.0.0.1") -> Request:
     """Minimal stand-in for a Starlette Request exposing request.client.host."""
     return cast(Request, SimpleNamespace(client=SimpleNamespace(host=host)))
+
+
+# pair_login is wrapped by slowapi's @limiter.limit, which requires a real Request. Call the
+# undecorated function in unit tests; the rate limit still applies on the real endpoint.
+_pair_login = getattr(auth_router.pair_login, "__wrapped__", auth_router.pair_login)
 
 
 def test_get_or_create_local_user_is_idempotent(session):
@@ -59,6 +65,37 @@ def test_local_login_rejected_from_non_loopback(session, monkeypatch):
     with pytest.raises(HTTPException) as exc:
         asyncio.run(auth_router.local_login(_request("192.168.1.50"), session=session))
     assert exc.value.status_code == 403
+
+
+def test_pair_login_succeeds_with_correct_pin(session, monkeypatch):
+    monkeypatch.setattr(settings, "APP_PROFILE", "standalone")
+    monkeypatch.setattr(settings, "LOCAL_PAIRING_PIN", "246813")
+    resp = asyncio.run(
+        _pair_login(_request("192.168.1.50"), PairBody(pin="246813"), session=session)
+    )
+    assert resp["user"]["id"] == auth_router.LOCAL_USER_ID
+    payload = verify_token(resp["access_token"])
+    assert payload is not None and payload["sub"] == auth_router.LOCAL_USER_ID
+
+
+def test_pair_login_rejects_wrong_pin(session, monkeypatch):
+    monkeypatch.setattr(settings, "APP_PROFILE", "standalone")
+    monkeypatch.setattr(settings, "LOCAL_PAIRING_PIN", "246813")
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(
+            _pair_login(_request("192.168.1.50"), PairBody(pin="000000"), session=session)
+        )
+    assert exc.value.status_code == 401
+
+
+def test_pair_login_hidden_when_pairing_disabled(session, monkeypatch):
+    monkeypatch.setattr(settings, "APP_PROFILE", "standalone")
+    monkeypatch.setattr(settings, "LOCAL_PAIRING_PIN", "")  # no PIN => pairing off
+    with pytest.raises(HTTPException) as exc:
+        asyncio.run(
+            _pair_login(_request("192.168.1.50"), PairBody(pin="123456"), session=session)
+        )
+    assert exc.value.status_code == 404
 
 
 def test_auth_mode_helper(monkeypatch):

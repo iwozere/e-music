@@ -4,6 +4,7 @@ import '../../theme/app_colors.dart';
 import '../../models/user.dart';
 import '../../repositories/auth_repository.dart';
 import 'home_screen.dart';
+import 'home_connect_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -156,6 +157,18 @@ class _LoginScreenState extends State<LoginScreen> {
                 const SizedBox(height: 24),
 
                 _GoogleSignInButton(),
+
+                const SizedBox(height: 16),
+                TextButton.icon(
+                  onPressed: () => Navigator.of(context).push(
+                    MaterialPageRoute(builder: (_) => const HomeConnectScreen()),
+                  ),
+                  icon: const Icon(Icons.home_work_outlined, color: Colors.white70),
+                  label: const Text(
+                    'Connect to a home server (PC)',
+                    style: TextStyle(color: Colors.white70, fontWeight: FontWeight.w600),
+                  ),
+                ),
               ],
             ),
           ),
