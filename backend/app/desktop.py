@@ -38,11 +38,24 @@ _SHADOW_ENV_KEYS = (
 )
 
 
+def _bundled_ffmpeg():
+    """Path to the ffmpeg shipped inside a frozen (PyInstaller) build, or None when running from source."""
+    base = getattr(sys, "_MEIPASS", None)
+    if not base:
+        return None
+    exe = "ffmpeg.exe" if os.name == "nt" else "ffmpeg"
+    candidate = os.path.join(base, "ffmpeg", exe)
+    return candidate if os.path.isfile(candidate) else None
+
+
 def _prepare_environment() -> None:
     """Force the standalone profile before ``app.config`` is imported (settings load at import)."""
     os.environ["APP_PROFILE"] = "standalone"
     for key in _SHADOW_ENV_KEYS:
         os.environ.setdefault(key, "")
+    ffmpeg = _bundled_ffmpeg()
+    if ffmpeg:
+        os.environ.setdefault("FFMPEG_PATH", ffmpeg)
 
 
 def _pick_port(preferred: int = DEFAULT_PORT) -> int:
@@ -98,6 +111,14 @@ def main() -> int:
     import uvicorn
 
     from app.config import settings
+
+    # Prefer a self-updating yt-dlp from the data dir, before app.main imports yt_dlp.
+    try:
+        from app.standalone.ytdlp_updater import prepare_ytdlp
+        prepare_ytdlp(settings.DATA_DIR)
+    except Exception:
+        pass
+
     from app.main import app
 
     url = f"http://127.0.0.1:{port}"
@@ -108,6 +129,7 @@ def main() -> int:
     print(f"  Profile : {settings.APP_PROFILE}  (auth: {settings.auth_mode()})")
     print(f"  Data    : {settings.DATA_DIR}")
     print(f"  Library : {settings.MUSIC_PATH}")
+    print(f"  FFmpeg  : {settings.ffmpeg_executable()}{'  (bundled)' if _bundled_ffmpeg() else ''}")
     print(f"  URL     : {url}")
     print("=" * 60)
 
