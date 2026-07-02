@@ -20,7 +20,17 @@
       "Bash(git --no-pager show 0674fcc --stat)",
       "Bash(git --no-pager grep -c \"APP_PROFILE\" 0674fcc -- backend/app/config.py)",
       "Bash(../.venv/Scripts/python.exe *)",
-      "Bash(/c/dev/cursor/e-music/.venv/Scripts/python.exe *)"
+      "Bash(/c/dev/cursor/e-music/.venv/Scripts/python.exe *)",
+      "Bash(curl -s --retry 40 --retry-delay 2 --retry-connrefused http://127.0.0.1:8141/health)",
+      "Bash(curl -s http://127.0.0.1:8141/api/v1/config)",
+      "Bash(curl -s -X POST http://127.0.0.1:8141/api/v1/auth/local)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://127.0.0.1:8141/)",
+      "Bash(PYTHONPATH=. ../.venv/Scripts/python.exe -)",
+      "Bash(git --no-pager log --oneline -8)",
+      "Bash(python *)",
+      "Bash(ls *.toml *.cfg *.ini)",
+      "Bash(python -m pyright --version)",
+      "Bash(python -m mypy --version)"
     ]
   }
 }
