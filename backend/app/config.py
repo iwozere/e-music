@@ -129,6 +129,11 @@ class Settings(BaseSettings):
     # Set to 0 to disable ranged chunking and fall back to a single streaming GET.
     STREAM_HTTP_CHUNK_BYTES: int = 1024 * 1024
 
+    # Total plays (summed across ALL users) at which a YouTube track is promoted to the
+    # persistent SSD cache. Global so popular tracks cache even when many users each play
+    # them once, rather than requiring one user to replay the same track. Min 1.
+    CACHE_PROMOTE_PLAY_THRESHOLD: int = 3
+
     # --- AI Shuffle (Groq LLM-backed radio mode) ---
     GROQ_API_KEY: Optional[str] = None
     # Model to use; llama-3.1-8b-instant is fast and free-tier friendly.

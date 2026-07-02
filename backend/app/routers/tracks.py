@@ -539,11 +539,22 @@ async def track_played(
         activity.last_played = datetime.now(timezone.utc)
         session.add(activity)
 
-        # Trigger persistent caching on the 3rd play (YouTube sources only)
-        if activity.play_count == 3 and track.remote_id:
+    # Promote to the persistent cache once TOTAL plays across all users reach the
+    # threshold (YouTube sources only). Using a global sum means popular tracks cache
+    # even when many users each play them once, while still covering a single user's
+    # replays. The is_cached guard makes this idempotent (no fragile exact-count check);
+    # autoflush makes the pending play_count change visible to the aggregate query.
+    if track.remote_id and not track.is_cached:
+        total_plays = session.exec(
+            select(func.coalesce(func.sum(col(UserActivity.play_count)), 0)).where(
+                UserActivity.track_id == track.id
+            )
+        ).one()
+        if total_plays >= settings.CACHE_PROMOTE_PLAY_THRESHOLD:
             _logger.info(
-                "Track %s reached threshold (3 plays). Promoting to persistent cache.",
+                "Track %s reached global cache threshold (%s plays). Promoting to persistent cache.",
                 track.id,
+                total_plays,
             )
             promote_track_to_cache(track.remote_id)
 
