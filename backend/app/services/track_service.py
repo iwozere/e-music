@@ -3,7 +3,7 @@ import asyncio
 from typing import Optional
 from sqlmodel import Session, select, or_
 
-from app.models import Track
+from app.models import SourceType, Track
 from app.services import ytmusic
 from app.utils.logger import setup_logger
 
@@ -62,7 +62,7 @@ async def ensure_track_exists(session: Session, track_id: str) -> Optional[Track
                     artist=details.get("author", "Unknown Artist"),
                     album=album_name,
                     remote_id=track_id,
-                    source_type="youtube",
+                    source_type=SourceType.youtube,
                     thumbnail=thumb_url,
                     duration=duration,
                 )

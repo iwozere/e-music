@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import httpx
-from mutagen.id3 import APIC, ID3, TALB, TIT2, TPE1
+from mutagen.id3 import APIC, ID3, TALB, TIT2, TPE1  # pyright: ignore[reportPrivateImportUsage]
 from mutagen.mp3 import MP3
 from sqlmodel import Session, col, select
 

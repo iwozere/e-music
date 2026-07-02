@@ -405,6 +405,7 @@ def _stream_resolved(
         return
 
     assert ff_proc.stdin is not None and ff_proc.stdout is not None
+    ff_stdin = ff_proc.stdin  # narrowed local so nested closures keep a non-Optional type
 
     def _feed_from_http() -> None:
         """Worker thread: pump bytes from googlevideo into ffmpeg.stdin.
@@ -442,7 +443,7 @@ def _stream_resolved(
                 state["t_last"] = now
                 state["bytes_fed"] += len(chunk)
                 try:
-                    ff_proc.stdin.write(chunk)
+                    ff_stdin.write(chunk)
                 except (BrokenPipeError, ValueError):
                     # ffmpeg exited or client disconnected.
                     return False
@@ -503,7 +504,7 @@ def _stream_resolved(
             feeder_err.append(repr(exc))
         finally:
             try:
-                ff_proc.stdin.close()
+                ff_stdin.close()
             except Exception:
                 pass
 
@@ -781,6 +782,7 @@ async def stream_youtube(
             library_user_id=library_user_id,
         )
     else:
+        assert resolved is not None  # use_legacy is False only when resolved is set
         _logger.info(
             "streamer: starting resolver pipeline track=%s ext=%s acodec=%s",
             track_id,

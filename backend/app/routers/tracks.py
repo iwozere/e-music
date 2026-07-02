@@ -19,7 +19,7 @@ from app.config import settings
 from app.db import get_session
 from app.dependencies import get_current_user, get_optional_user
 from app.limiter_ext import limiter
-from app.models import PlayHistory, Track, User, UserActivity
+from app.models import PlayHistory, SourceType, Track, User, UserActivity
 from app.public_api import api_v1_base_url
 from app.schemas import AiShuffleBody, StreamGrantBody
 from app.services import streamer
@@ -325,8 +325,13 @@ async def _search_tracks_core(
 
     local_results: List[Track] = []
     if offset < local_count:
+        # Cached (on-disk) tracks first, then metadata-only DB rows. Secondary sort
+        # on id keeps pagination stable across pages.
+        local_order = (col(Track.is_cached).desc(), col(Track.id))
         local_results = list(
-            session.exec(select(Track).where(where).offset(offset).limit(limit)).all()
+            session.exec(
+                select(Track).where(where).order_by(*local_order).offset(offset).limit(limit)
+            ).all()
         )
 
     needed_from_yt = limit - len(local_results)
@@ -752,7 +757,7 @@ async def ai_shuffle(
     if current_user and len(context_tracks) < 2:
         hist_stmt = (
             select(Track)
-            .join(PlayHistory, PlayHistory.track_id == Track.id)
+            .join(PlayHistory, col(PlayHistory.track_id) == col(Track.id))
             .where(col(PlayHistory.user_id) == current_user.id)
             .order_by(col(PlayHistory.played_at).desc())
             .limit(10)
@@ -789,7 +794,7 @@ async def ai_shuffle(
                 title=td.get("title", "Unknown"),
                 artist=td.get("artist"),
                 album=td.get("album"),
-                source_type="youtube",
+                source_type=SourceType.youtube,
                 remote_id=rid,
                 thumbnail=td.get("thumbnail"),
                 duration=td.get("duration"),

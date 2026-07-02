@@ -73,6 +73,8 @@ def _call_gemini_sync(audio_bytes: bytes, mime_type: str) -> str:
         model=settings.GEMINI_MODEL,
         contents=[audio_part, _PROMPT],
     )
+    if response.text is None:
+        raise ValueError("Gemini returned an empty response")
     return response.text
 
 

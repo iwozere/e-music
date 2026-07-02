@@ -1,4 +1,4 @@
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, cast
 from ytmusicapi import YTMusic
 from app.utils.logger import setup_logger
 
@@ -62,7 +62,7 @@ async def get_related_tracks(video_id: str, limit: int = 20) -> List[Dict]:
     try:
         # get_watch_playlist returns a playlist of related videos
         watch_playlist = yt.get_watch_playlist(video_id, limit=limit)
-        results = watch_playlist.get("tracks", [])
+        results: List[Dict] = cast(List[Dict], watch_playlist.get("tracks") or [])
         
         formatted_results = []
         for item in results:

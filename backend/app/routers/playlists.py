@@ -2,7 +2,7 @@ import uuid
 import asyncio
 from typing import List
 from fastapi import APIRouter, HTTPException, Depends, Form
-from sqlmodel import Session, select, delete
+from sqlmodel import Session, col, select, delete
 
 from app.models import User, Track, Playlist, PlaylistTrack
 from app.db import get_session
@@ -133,8 +133,8 @@ async def get_playlist_tracks(
     statement = (
         select(Track, PlaylistTrack.position)
         .join(PlaylistTrack)
-        .where(PlaylistTrack.playlist_id == playlist_id)
-        .order_by(PlaylistTrack.position)
+        .where(col(PlaylistTrack.playlist_id) == playlist_id)
+        .order_by(col(PlaylistTrack.position))
     )
     result = session.exec(statement).all()
     
@@ -177,6 +177,6 @@ async def delete_playlist(
         raise HTTPException(status_code=404, detail="Playlist not found")
 
     session.delete(playlist)
-    session.exec(delete(PlaylistTrack).where(PlaylistTrack.playlist_id == playlist_id))
+    session.execute(delete(PlaylistTrack).where(col(PlaylistTrack.playlist_id) == playlist_id))
     session.commit()
     return {"status": "success"}

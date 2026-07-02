@@ -1,8 +1,9 @@
+import os
 import time
 from pathlib import Path
 
 from watchdog.observers import Observer
-from watchdog.events import FileSystemEventHandler, FileCreatedEvent, FileMovedEvent
+from watchdog.events import FileSystemEventHandler, FileSystemEvent
 from sqlmodel import Session
 
 from app.db import engine
@@ -15,23 +16,23 @@ class LibraryHandler(FileSystemEventHandler):
     """
     Event handler for monitoring music library filesystem changes.
     """
-    def on_created(self, event: FileCreatedEvent) -> None:
+    def on_created(self, event: FileSystemEvent) -> None:
         """
         Handle new file creation.
         """
         if not event.is_directory:
             _logger.info("New file detected: %s", event.src_path)
             with Session(engine) as session:
-                scan_file(Path(event.src_path), session)
+                scan_file(Path(os.fsdecode(event.src_path)), session)
 
-    def on_moved(self, event: FileMovedEvent) -> None:
+    def on_moved(self, event: FileSystemEvent) -> None:
         """
         Handle file relocation.
         """
         if not event.is_directory:
             _logger.info("File moved: from %s to %s", event.src_path, event.dest_path)
             with Session(engine) as session:
-                scan_file(Path(event.dest_path), session)
+                scan_file(Path(os.fsdecode(event.dest_path)), session)
 
 def start_watcher(library_path: str) -> None:
     """

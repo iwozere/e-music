@@ -318,7 +318,7 @@ def _get_ydl() -> Any:
         # Import lazily so tests that don't touch YouTube don't need yt-dlp importable.
         from yt_dlp import YoutubeDL  # type: ignore[import-untyped]
 
-        _ydl_instance = YoutubeDL(_build_ydl_opts())
+        _ydl_instance = YoutubeDL(_build_ydl_opts())  # pyright: ignore[reportArgumentType]
         return _ydl_instance
 
 

@@ -7,7 +7,7 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from sqlmodel import Session, delete, select
+from sqlmodel import Session, col, delete, select
 
 from app.config import settings
 from app.db import engine
@@ -61,11 +61,11 @@ def repair_stale_tracks() -> dict:
                     continue
                 under_cache = _path_under_any_root(t.local_path, roots)
                 if t.source_type == "local" and under_cache:
-                    session.exec(
-                        delete(PlaylistTrack).where(PlaylistTrack.track_id == t.id)
+                    session.execute(
+                        delete(PlaylistTrack).where(col(PlaylistTrack.track_id) == t.id)
                     )
-                    session.exec(
-                        delete(UserActivity).where(UserActivity.track_id == t.id)
+                    session.execute(
+                        delete(UserActivity).where(col(UserActivity.track_id) == t.id)
                     )
                     session.delete(t)
                     deleted += 1

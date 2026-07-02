@@ -9,7 +9,7 @@ from sqlmodel import Session, select
 
 from app.config import settings
 from app.db import engine
-from app.models import Track
+from app.models import SourceType, Track
 from app.utils.logger import setup_logger
 
 _logger = setup_logger(__name__)
@@ -173,7 +173,7 @@ def scan_file(file_path: Path, session: Session) -> None:
                 title=str(title),
                 artist=str(artist) if artist else None,
                 album=str(album) if album else None,
-                source_type="local",
+                source_type=SourceType.local,
                 local_path=str(file_path),
                 is_cached=True,
                 duration=duration

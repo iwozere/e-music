@@ -51,13 +51,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     watcher_thread.start()
 
     # Print DB diagnostics
-    from sqlmodel import Session, func, select
+    from sqlmodel import Session, col, func, select
 
     from app.db import engine
     from app.models import Track
 
     with Session(engine) as session:
-        count = session.exec(select(func.count(Track.id))).one()
+        count = session.exec(select(func.count(col(Track.id)))).one()
         _logger.info("Database loaded. Total tracks indexed: %s", count)
         if count == 0:
             _logger.warning(
