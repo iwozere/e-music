@@ -1,24 +1,28 @@
-fastapi==0.115.6
-slowapi==0.1.9
-email-validator==2.2.0
-uvicorn==0.34.0
-sqlalchemy==2.0.36
-aiosqlite==0.20.0
-sqlmodel==0.0.22
-pydantic-settings==2.7.0
+fastapi==0.141.1
+slowapi==0.1.10
+email-validator==2.3.0
+uvicorn==0.52.4
+sqlalchemy==2.0.52
+aiosqlite==0.22.1
+sqlmodel==0.0.39
+pydantic-settings==2.15.0
 platformdirs>=4.2,<5
 PyJWT>=2.10.0
 passlib[bcrypt]==1.7.4
-python-multipart==0.0.20
+# passlib is unmaintained; its bcrypt backend self-test crashes on bcrypt>=4.1
+# (AttributeError: module 'bcrypt' has no attribute '__about__', then ValueError:
+# password cannot be longer than 72 bytes from its own wrap-bug probe). Pin bcrypt
+# directly until passlib is replaced — do not let this float to latest.
+bcrypt==4.0.1
+python-multipart==0.0.32
 httpx==0.28.1
-mutagen==1.47.0
-ytmusicapi==1.10.2
-alembic==1.14.0
-psutil==6.1.1
+mutagen==1.48.1
+ytmusicapi==1.12.2
+alembic==1.19.1
+psutil==7.2.2
 watchdog==6.0.0
 # [default] pulls yt-dlp-ejs — required for YouTube signature/n challenges (needs Deno/Node in PATH)
-yt-dlp[default]>=2025.10.14
-google-auth==2.37.0
-requests==2.32.3
-groq>=0.9.0
-google-genai
+yt-dlp[default]>=2026.8.19
+google-auth==2.56.3
+requests==2.34.2
+google-genai==2.19.0

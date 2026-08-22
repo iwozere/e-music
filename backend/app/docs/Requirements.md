@@ -11,7 +11,6 @@
 - `mutagen` >= 1.46.0
 - `watchdog` >= 3.0.0
 - `slowapi` >= 0.1.9 — rate limiting for API endpoints
-- `groq` >= 0.9.0 — Groq LLM client for AI shuffle
 - `google-genai` >= 2.0.0 — Google Gemini SDK for hum-to-search melody identification
 
 ## External Dependencies
