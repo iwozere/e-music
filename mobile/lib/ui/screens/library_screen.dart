@@ -122,8 +122,11 @@ class _LibraryScreenState extends State<LibraryScreen> {
                       IconButton(
                         icon: const Icon(Icons.share),
                         onPressed: () {
-                          Share.share(
-                            'Check out my playlist "${playlist['name']}" on MySpotify: https://e-music.win/?playlist=${playlist['id']}',
+                          SharePlus.instance.share(
+                            ShareParams(
+                              text:
+                                  'Check out my playlist "${playlist['name']}" on MySpotify: https://e-music.win/?playlist=${playlist['id']}',
+                            ),
                           );
                         },
                       ),

@@ -61,8 +61,11 @@ class _LikedSongsScreenState extends State<LikedSongsScreen> {
           IconButton(
             icon: const Icon(Icons.share),
             onPressed: () {
-              Share.share(
-                'Check out my liked songs on MySpotify: https://api.e-music.win/tracks/liked',
+              SharePlus.instance.share(
+                ShareParams(
+                  text:
+                      'Check out my liked songs on MySpotify: https://api.e-music.win/tracks/liked',
+                ),
               );
             },
           ),

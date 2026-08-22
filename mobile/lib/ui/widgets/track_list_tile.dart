@@ -103,8 +103,11 @@ class TrackListTile extends StatelessWidget {
               _showPlaylistSheet(context, track);
               break;
             case 'share':
-              Share.share(
-                'Listen to ${track.title} by ${track.artist} on MySpotify: https://e-music.win/?track=${track.id}',
+              SharePlus.instance.share(
+                ShareParams(
+                  text:
+                      'Listen to ${track.title} by ${track.artist} on MySpotify: https://e-music.win/?track=${track.id}',
+                ),
               );
               break;
           }

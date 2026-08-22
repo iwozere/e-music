@@ -5,13 +5,21 @@ import 'api_client.dart';
 
 class AuthRepository {
   final ApiClient apiClient;
-  final GoogleSignIn _googleSignIn = GoogleSignIn(
-    scopes: ['email', 'openid', 'profile'],
-    serverClientId:
-        '342747071263-p0a752cdvvj39kuvfsnp2pabrqvb1ivs.apps.googleusercontent.com',
-  );
+  final GoogleSignIn _googleSignIn = GoogleSignIn.instance;
+  Future<void>? _googleSignInInit;
 
   AuthRepository({required this.apiClient});
+
+  /// google_sign_in 7.x requires an explicit, one-time async initialize()
+  /// before any other method on the singleton is used. Basic identity scopes
+  /// (email/openid/profile) are inherent to [GoogleSignIn.authenticate] now,
+  /// so they're no longer passed here — only serverClientId remains.
+  Future<void> _ensureGoogleSignInInitialized() {
+    return _googleSignInInit ??= _googleSignIn.initialize(
+      serverClientId:
+          '342747071263-p0a752cdvvj39kuvfsnp2pabrqvb1ivs.apps.googleusercontent.com',
+    );
+  }
 
   Future<User?> register({
     required String username,
@@ -65,10 +73,13 @@ class AuthRepository {
 
   Future<User?> signIn() async {
     try {
-      final GoogleSignInAccount? account = await _googleSignIn.signIn();
-      if (account == null) return null;
+      await _ensureGoogleSignInInitialized();
+      // authenticate() throws GoogleSignInException (e.g. .canceled) instead
+      // of returning null on cancel/failure — caught by the try/catch below,
+      // same effective behavior as the old signIn() == null check.
+      final GoogleSignInAccount account = await _googleSignIn.authenticate();
 
-      final GoogleSignInAuthentication auth = await account.authentication;
+      final GoogleSignInAuthentication auth = account.authentication;
       final String? idToken = auth.idToken;
       if (idToken == null || idToken.isEmpty) return null;
 
@@ -133,6 +144,7 @@ class AuthRepository {
 
   Future<void> signOut() async {
     final refresh = await apiClient.getRefreshToken();
+    await _ensureGoogleSignInInitialized();
     await _googleSignIn.signOut();
     if (refresh != null && refresh.isNotEmpty) {
       try {

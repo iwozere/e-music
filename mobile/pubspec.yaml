@@ -19,7 +19,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 version: 1.0.0+1
 
 environment:
-  sdk: ^3.10.7
+  sdk: ^3.11.0
 
 # Dependencies specify other packages that your package needs in order to work.
 # To automatically upgrade your package dependencies to the latest versions
@@ -36,17 +36,17 @@ dependencies:
   cupertino_icons: ^1.0.8
   just_audio: ^0.10.5
   flutter_bloc: ^9.1.1
-  google_sign_in: ^6.2.1
+  google_sign_in: ^7.2.0
   http: ^1.6.0
-  flutter_secure_storage: ^10.0.0
+  flutter_secure_storage: ^11.0.0
   path_provider: ^2.1.5
   audio_session: ^0.2.2
   audio_service: ^0.18.17
   provider: ^6.1.5+1
   json_annotation: ^4.10.0
   equatable: ^2.0.8
-  share_plus: ^10.1.4
-  record: ^5.0.0
+  share_plus: ^13.3.0
+  record: ^7.1.1
   http_parser: ^4.0.0
   multicast_dns: ^0.3.2   # Home Remote: discover the desktop on the LAN via mDNS (Phase 7)
 
