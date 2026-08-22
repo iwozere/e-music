@@ -47,3 +47,4 @@ cookies.txt
 # Logs
 backend/logs/*
 !backend/logs/.gitkeep
+monitoring.txt
