@@ -1,5 +1,5 @@
 // main.js - Entry Point
-console.log("MySpotify v2.9.28");
+console.log("MySpotify v2.9.29");
 
 const state = {
     user: null,

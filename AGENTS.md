@@ -42,7 +42,10 @@ When making any change, keep the Raspberry Pi target in mind: prefer low-CPU pat
 
 ### 1.1 Web UI Versioning (cache busting)
 
-When modifying any file in `backend/app/static/`, you **MUST**:
+Bump the version whenever you ship **any** user-visible change — not only edits inside
+`backend/app/static/`. This includes backend/mobile dependency upgrades, bug fixes, and
+behavior changes users would notice, even if no static file was touched directly. You
+**MUST**:
 
 1. Bump the version string in `index.html` (sidebar footer).
 2. Bump the version in the `console.log` at the top of `main.js`.
